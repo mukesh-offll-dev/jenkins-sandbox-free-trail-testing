@@ -21,6 +21,12 @@ export interface Secrets {
   cardCvc: string;
 }
 
+/** Parsed form of the THINKSTER_QA_BYPASS cookie string (`name=value`). */
+export interface QaBypassCookie {
+  name: string;
+  value: string;
+}
+
 function required(name: string, fallback?: string): string {
   const value = process.env[name]?.trim();
   if (value) return value;
@@ -52,6 +58,27 @@ export function secrets(): Secrets {
     cardExpiry: required('SANDBOX_CARD_EXPIRY', '12/30'),
     cardCvc: required('SANDBOX_CARD_CVC', '123'),
   };
+}
+
+/**
+ * Read the authorized QA reCAPTCHA bypass cookie from the environment.
+ *
+ * The env var holds the full cookie string in `name=value` format so that it
+ * can be sourced verbatim from a Jenkins Secret text credential and pasted
+ * directly into .env for local use without any extra parsing at the call site.
+ *
+ * Returns undefined when the variable is absent or empty, so the test can run
+ * without a bypass token (falling back to the reCAPTCHA retry path).
+ *
+ * The value is intentionally NOT included in the Secrets interface because it
+ * is only applied to the browser context, not typed into any form field.
+ */
+export function qaBypassCookie(): QaBypassCookie | undefined {
+  const raw = process.env.THINKSTER_QA_BYPASS?.trim();
+  if (!raw) return undefined;
+  const eq = raw.indexOf('=');
+  if (eq < 1) return undefined;
+  return { name: raw.slice(0, eq), value: raw.slice(eq + 1) };
 }
 
 /**

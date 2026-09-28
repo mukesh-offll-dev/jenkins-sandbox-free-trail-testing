@@ -6,7 +6,7 @@
  * numbers can never leak into a published Jenkins artifact.
  */
 
-import { secrets } from './env';
+import { secrets, qaBypassCookie } from './env';
 
 /** Mask a card number to its last 4 digits, e.g. "**** **** **** 1111". */
 export function maskCard(cardNumber: string): string {
@@ -55,6 +55,12 @@ export function redact(text: string): string {
   const grouped = s.cardNumber.replace(/(\d{4})(?=\d)/g, '$1[ -]?');
   if (s.cardNumber.length >= 12) {
     output = output.replace(new RegExp(grouped, 'g'), maskCard(s.cardNumber));
+  }
+
+  // The QA reCAPTCHA bypass token must never appear in logs or artifacts.
+  const bypass = qaBypassCookie();
+  if (bypass?.value && bypass.value.length >= 8) {
+    output = output.replace(new RegExp(escapeRegExp(bypass.value), 'g'), '***QA_BYPASS***');
   }
 
   // The Elevate hand-off is an SSO deep link of the form

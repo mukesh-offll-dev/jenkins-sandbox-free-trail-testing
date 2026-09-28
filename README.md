@@ -169,6 +169,7 @@ Verified target: Jenkins **2.568.3** at `http://localhost:8080`.
 | `thinkster-sandbox-card-number` | `4111111111111111` |
 | `thinkster-sandbox-card-expiry` | `12/30` |
 | `thinkster-sandbox-card-cvc` | `123` |
+| `thinkster-qa-bypass` | `thinkster-qa-bypass=<token>` — obtain from the Thinkster QA team |
 
 Jenkins masks these in the console output automatically.
 
@@ -254,9 +255,16 @@ test code reliably defeats bot scoring, and trying to is the wrong engineering a
 
 1. Google's **test reCAPTCHA keys** (`6LeIxAcTAAAA...`), which always verify, or
 2. reCAPTCHA disabled entirely on `*-sandbox` hosts, or
-3. an allowlisted automation header/secret that skips the reCAPTCHA check.
+3. an allowlisted automation cookie/secret that skips the reCAPTCHA check.
 
-Any of those makes the suite deterministic. Until then:
+**Option 3 is now implemented.** Set `THINKSTER_QA_BYPASS` (locally in `.env`, or via
+the Jenkins credential `thinkster-sandbox-qa-bypass`) to the cookie string supplied by
+the Thinkster QA team. When present, the suite adds that cookie to the browser context
+before the first navigation and the server-side reCAPTCHA check is skipped entirely,
+making the run deterministic. The reCAPTCHA retry path is retained as a fallback when
+the variable is absent.
+
+Until the bypass token is available:
 
 - run it **sparingly** (the 2-hour Jenkins schedule is comfortably within tolerance)
 - `retries: 1` in CI gives each build a second chance

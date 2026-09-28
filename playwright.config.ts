@@ -62,7 +62,12 @@ export default defineConfig({
     // Video needs the Playwright ffmpeg binary. Set VIDEO=off on agents where
     // that binary cannot be downloaded; CI keeps the default.
     video: process.env.VIDEO === 'off' ? 'off' : 'retain-on-failure',
-    trace: 'on-first-retry',
+    // Tracing is managed entirely by tests/fixtures.ts, which calls
+    // tracing.start() on the manually-created context and saves the zip on
+    // any failure. Leaving trace: 'on-first-retry' here causes a second
+    // tracing.start() on the same context during a retry, crashing with
+    // "Tracing is already started".
+    trace: 'off',
 
     actionTimeout: 30 * 1000,
     navigationTimeout: 90 * 1000,

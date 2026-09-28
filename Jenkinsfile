@@ -65,11 +65,15 @@ pipeline {
         // ---- Secrets: Jenkins Credentials (Secret text) ---------------------
         // Create these once under Manage Jenkins > Credentials (see README).
         // Jenkins masks every one of these values in the console log.
-        PARENT_PASSWORD     = credentials('thinkster-sandbox-parent-password')
-        SANDBOX_OTP         = credentials('thinkster-sandbox-otp')
-        SANDBOX_CARD_NUMBER = credentials('thinkster-sandbox-card-number')
-        SANDBOX_CARD_EXPIRY = credentials('thinkster-sandbox-card-expiry')
-        SANDBOX_CARD_CVC    = credentials('thinkster-sandbox-card-cvc')
+        PARENT_PASSWORD       = credentials('thinkster-sandbox-parent-password')
+        SANDBOX_OTP           = credentials('thinkster-sandbox-otp')
+        SANDBOX_CARD_NUMBER   = credentials('thinkster-sandbox-card-number')
+        SANDBOX_CARD_EXPIRY   = credentials('thinkster-sandbox-card-expiry')
+        SANDBOX_CARD_CVC      = credentials('thinkster-sandbox-card-cvc')
+        // QA reCAPTCHA bypass cookie (cookie-string format: name=value).
+        // Allows the sandbox server to skip reCAPTCHA scoring for this session.
+        // Credential kind: Secret text.  ID: thinkster-qa-bypass
+        THINKSTER_QA_BYPASS   = credentials('thinkster-qa-bypass')
 
         // ---- Run behaviour --------------------------------------------------
         CI                = 'true'

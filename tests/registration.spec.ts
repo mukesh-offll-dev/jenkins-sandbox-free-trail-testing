@@ -11,7 +11,7 @@ import { SchedulingPage } from '../src/pages/SchedulingPage';
 import { SandboxPaymentPage } from '../src/pages/SandboxPaymentPage';
 import { StudentSelectionPage } from '../src/pages/StudentSelectionPage';
 
-import { assertSandboxOnly, secrets, urls } from '../src/utils/env';
+import { assertSandboxOnly, secrets, urls, qaBypassCookie } from '../src/utils/env';
 import { buildRegistrationTestData } from '../src/utils/testData';
 import { RunReport } from '../src/utils/runReport';
 import { safeLog } from '../src/utils/mask';
@@ -69,6 +69,20 @@ test.describe('Thinkster sandbox - free trial registration', () => {
 
     fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
     safeLog(`[run ${data.runId}] parent email: ${data.generatedEmail.email} (generated ${data.generatedEmail.generatedAtIst})`);
+
+    // Apply the authorized QA reCAPTCHA bypass cookie if configured.
+    // Set AFTER beforeEach has cleared Thinkster cookies, and BEFORE the first
+    // navigation, so every sandbox request in this run carries the cookie.
+    // Scoped to the registration host only; never applied to non-sandbox URLs.
+    const bypass = qaBypassCookie();
+    if (bypass) {
+      await context.addCookies([{
+        name: bypass.name,
+        value: bypass.value,
+        url: registration,
+      }]);
+      safeLog(`[run ${data.runId}] QA reCAPTCHA bypass cookie applied`);
+    }
 
     const home = new HomePage(page);
     const student = new StudentRegistrationPage(page);
