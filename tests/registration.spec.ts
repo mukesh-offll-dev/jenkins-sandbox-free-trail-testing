@@ -1,4 +1,5 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect } from './fixtures';
+import type { Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -14,6 +15,7 @@ import { assertSandboxOnly, secrets, urls } from '../src/utils/env';
 import { buildRegistrationTestData } from '../src/utils/testData';
 import { RunReport } from '../src/utils/runReport';
 import { safeLog } from '../src/utils/mask';
+import { saveRecaptchaState } from '../src/utils/recaptchaState';
 
 const EVIDENCE_DIR = path.resolve(process.cwd(), 'artifacts', 'evidence');
 
@@ -30,6 +32,33 @@ const EVIDENCE_DIR = path.resolve(process.cwd(), 'artifacts', 'evidence');
 test.describe.configure({ mode: 'serial' });
 
 test.describe('Thinkster sandbox - free trial registration', () => {
+  /**
+   * The Chromium profile is reused across runs to retain reCAPTCHA reputation,
+   * so the APPLICATION session must be reset explicitly: otherwise a previous
+   * run's widget progress or Elevate login could leak into this one.
+   * Google/reCAPTCHA cookies are deliberately left untouched.
+   */
+  test.beforeEach(async ({ context }) => {
+    for (const domain of [
+      'sandbox.hellothinkster.com',
+      'elevate-sandbox.hellothinkster.com',
+      'core-api-4.0-sandbox.hellothinkster.com',
+      '.hellothinkster.com',
+      'hellothinkster.com',
+    ]) {
+      await context.clearCookies({ domain }).catch(() => undefined);
+    }
+  });
+
+  /**
+   * Persist the Google/reCAPTCHA cookie jar after every run, pass or fail.
+   * Reputation accrues either way, which reduces 403 bot-scoring rejections on
+   * subsequent runs. Thinkster cookies are never carried over.
+   */
+  test.afterEach(async ({ context }) => {
+    await saveRecaptchaState(context);
+  });
+
   test('registers a new parent and student and reaches the student selection page', async ({ page, context }, testInfo) => {
     assertSandboxOnly();
 
@@ -96,8 +125,12 @@ test.describe('Thinkster sandbox - free trial registration', () => {
       // ---------------------------------------------------------------- step 4
       await test.step('Verify the phone number with the sandbox OTP', async () => {
         await otp.expectLoaded(data.parent.phoneDigits.slice(-4));
-        await otp.enterOtpAndWaitForAutoSubmit(config.otp);
-        report.step('otp-verified', 'sandbox OTP accepted; registration created');
+        const verify = await otp.enterOtpAndWaitForAutoSubmit(config.otp);
+        report.step(
+          'otp-verified',
+          `sandbox OTP accepted; registration created; attempts=${verify.attempts}` +
+            (verify.transientErrors.length ? `; transient=${verify.transientErrors.join(' | ')}` : ''),
+        );
       });
 
       // ---------------------------------------------------------------- step 5

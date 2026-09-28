@@ -23,3 +23,6 @@ dist/
 Thumbs.db
 Desktop.ini
 *.log
+
+# persisted reCAPTCHA reputation (Google cookies only)
+.auth/

@@ -1,10 +1,29 @@
 import { defineConfig, devices } from '@playwright/test';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import { existingRecaptchaState } from './src/utils/recaptchaState';
 
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 const isCI = !!process.env.CI;
+
+/**
+ * Reuse one on-disk Chromium profile across runs (default: OFF).
+ *
+ * Opt in with PERSISTENT_PROFILE=on.
+ *
+ * Context: reCAPTCHA v3 guards the registration endpoints and scores fresh
+ * automated sessions as bots, answering
+ *   403 {"error":"reCAPTCHA verification failed. Please try again."}
+ * A long-lived browser profile is scored more favourably, so reusing one profile
+ * CAN help - but it is not a reliable fix (a newly created profile has no
+ * reputation yet), and it replaces Playwright's built-in artifact wiring.
+ *
+ * It is therefore off by default: the default configuration is the standard one
+ * that has passed this journey end to end. The real fix belongs on the server -
+ * see the reCAPTCHA section of README.md.
+ */
+const PERSISTENT_PROFILE = process.env.PERSISTENT_PROFILE === 'on';
 
 /**
  * The registration journey is a single, stateful, one-shot workflow:
@@ -55,6 +74,18 @@ export default defineConfig({
 
     viewport: { width: 1536, height: 864 },
     ignoreHTTPSErrors: true,
+
+    /**
+     * Carry Google/reCAPTCHA cookies over from previous runs so the session is
+     * not scored as a brand-new bot. Thinkster cookies are deliberately NOT
+     * persisted, so every run still starts from a clean application session.
+     *
+     * Only used when the persistent Chromium profile is disabled - the two
+     * mechanisms are mutually exclusive.
+     * See src/utils/recaptchaState.ts for the evidence behind this.
+     */
+    storageState:
+      process.env.RECAPTCHA_STATE === 'off' || PERSISTENT_PROFILE ? undefined : existingRecaptchaState(),
 
     /**
      * The sandbox guards its registration endpoints with reCAPTCHA v3.

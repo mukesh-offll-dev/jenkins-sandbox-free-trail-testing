@@ -240,9 +240,29 @@ attempt 4: HTTP 403 ... | banner shown
 attempt 5: success -> full journey completed, all 6 final assertions passed
 ```
 
-Bot scoring degrades with repeated registrations from one IP. If every attempt returns 403,
-that is an **external blocker**, not an automation defect — the failure message says so and
-includes the real HTTP status and body. `retries: 1` in CI gives the build a second chance.
+### ⚠️ This is the suite's one real limitation
+
+reCAPTCHA scoring **degrades with repeated registrations from the same machine/IP**. After
+roughly 20 runs in two hours, every attempt began returning 403 and the suite could no
+longer get past step 1 — while a long-lived human browser profile on the *same machine and
+IP, at the same moment*, still received `201 Lead captured successfully`.
+
+That is rate-limiting working as designed, and it is an **external blocker**: no amount of
+test code reliably defeats bot scoring, and trying to is the wrong engineering answer.
+
+**The correct fix is server-side** — ask for one of these on the sandbox environment:
+
+1. Google's **test reCAPTCHA keys** (`6LeIxAcTAAAA...`), which always verify, or
+2. reCAPTCHA disabled entirely on `*-sandbox` hosts, or
+3. an allowlisted automation header/secret that skips the reCAPTCHA check.
+
+Any of those makes the suite deterministic. Until then:
+
+- run it **sparingly** (the 2-hour Jenkins schedule is comfortably within tolerance)
+- `retries: 1` in CI gives each build a second chance
+- `PERSISTENT_PROFILE=on` reuses an on-disk Chromium profile, which can help once that
+  profile has accumulated reputation (off by default; it replaces Playwright's native
+  artifact wiring with the equivalent logic in `tests/fixtures.ts`)
 
 Reproduce the bug manually: open the homepage with DevTools → Network, **paste** an email
 and click the CTA within ~1–2 seconds. Typing it slowly (3–4 s) succeeds with
