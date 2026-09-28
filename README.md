@@ -26,7 +26,7 @@ Final state asserted on every run:
 |---|---|---|
 | 1 | URL is `https://elevate-sandbox.hellothinkster.com/students` | ✅ |
 | 2 | Heading "Who's Ready to Learn Today?" visible | ✅ |
-| 3 | New student's profile displayed (`Mukesh Automation`) | ✅ |
+| 3 | New student's profile displayed (`Test Automation`) | ✅ |
 | 4 | Student status is **In Trial** | ✅ |
 | 5 | **Select** button visible *and* enabled | ✅ |
 | 6 | No unexpected application error displayed | ✅ |
@@ -39,7 +39,7 @@ and three genuine application defects found along the way.
 ```
 thinkster-qa-automation/
 ├─ playwright.config.ts          one worker, serial, HTML+JUnit+JSON reporters
-├─ Jenkinsfile                   Windows declarative pipeline (default: every 2 hours)
+├─ Jenkinsfile                   Windows declarative pipeline (every 10 minutes)
 ├─ WORKFLOW.md                   verified workflow + locator reference
 ├─ .env.example                  environment template
 ├─ scripts/
@@ -98,8 +98,8 @@ npm run clean               # remove reports/artifacts
 ```
 
 Each execution registers a **brand-new parent**:
-`mukesh<DDMMHHmmSS>@tabtortest.com`, stamped in **Asia/Kolkata**
-(e.g. `mukesh2809120423@tabtortest.com`). In CI a `b<BUILD>e<EXECUTOR>` suffix is appended
+`test<DDMMHHmmSS>@tabtortest.com`, stamped in **Asia/Kolkata**
+(e.g. `test2809120423@tabtortest.com`). In CI a `b<BUILD>e<EXECUTOR>` suffix is appended
 so concurrent agents can never collide. An email is never reused.
 
 ## Reports, evidence and debugging
@@ -133,7 +133,7 @@ Password, OTP, CVC and the full card number never reach a log or an artifact.
 from anything written out. Verified:
 
 ```
-run-2809120423.json:  ".../sso/mukesh...%40tabtortest.com/***SSO_TOKEN***"
+run-2809120423.json:  ".../sso/test...%40tabtortest.com/***SSO_TOKEN***"
 run-2809120423.json:  "cardMasked": "**** **** **** 1111"
 run-2809120423.json:  "phoneMasked": "***-***-4336"
 grep for 12345678 / 123123 / 4111111111111111  ->  no matches
@@ -203,18 +203,23 @@ generate unique test data → typecheck → run registration test → publish + 
 One line at the top of the `Jenkinsfile`:
 
 ```groovy
-def SCHEDULE_CRON = 'H */2 * * *'   // default: every 2 hours
+def SCHEDULE_CRON = 'H/10 * * * *'   // current: every 10 minutes
 ```
 
 | Interval | Value |
 |---|---|
+| every 5 minutes | `'H/5 * * * *'` |
+| every 10 minutes | `'H/10 * * * *'` |
+| every 30 minutes | `'H/30 * * * *'` |
 | hourly | `'H * * * *'` |
 | every 2 hours | `'H */2 * * *'` |
-| every 3 hours | `'H */3 * * *'` |
 | every 4 hours | `'H */4 * * *'` |
 | every 6 hours | `'H */6 * * *'` |
 
-The leading `H` spreads builds across the hour instead of firing them all on the minute.
+The leading `H` spreads builds across the interval instead of firing them all on the same
+minute. Every run registers a real parent, holds a real calendar slot and submits a sandbox
+payment, so a sub-hourly interval accumulates sandbox data quickly —
+`disableConcurrentBuilds()` guarantees runs never overlap even if one outlasts the interval.
 
 ## Known application behaviour you will hit
 
@@ -258,7 +263,7 @@ test code reliably defeats bot scoring, and trying to is the wrong engineering a
 3. an allowlisted automation cookie/secret that skips the reCAPTCHA check.
 
 **Option 3 is now implemented.** Set `THINKSTER_QA_BYPASS` (locally in `.env`, or via
-the Jenkins credential `thinkster-sandbox-qa-bypass`) to the cookie string supplied by
+the Jenkins credential `thinkster-qa-bypass`) to the cookie string supplied by
 the Thinkster QA team. When present, the suite adds that cookie to the browser context
 before the first navigation and the server-side reCAPTCHA check is skipped entirely,
 making the run deterministic. The reCAPTCHA retry path is retained as a fallback when
@@ -266,7 +271,8 @@ the variable is absent.
 
 Until the bypass token is available:
 
-- run it **sparingly** (the 2-hour Jenkins schedule is comfortably within tolerance)
+- run it **sparingly** — reCAPTCHA scoring degrades with repeated registrations from one
+  IP, so widen `SCHEDULE_CRON` if 403s start appearing
 - `retries: 1` in CI gives each build a second chance
 - `PERSISTENT_PROFILE=on` reuses an on-disk Chromium profile, which can help once that
   profile has accumulated reputation (off by default; it replaces Playwright's native

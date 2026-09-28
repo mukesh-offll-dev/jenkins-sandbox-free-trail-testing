@@ -6,17 +6,24 @@
 //  ------------------------------------
 //  Edit SCHEDULE_CRON below and commit. Ready-made values:
 //
-//     every hour      'H * * * *'
-//     every 2 hours   'H */2 * * *'   <-- default
-//     every 3 hours   'H */3 * * *'
-//     every 4 hours   'H */4 * * *'
-//     every 6 hours   'H */6 * * *'
+//     every 5 minutes  'H/5 * * * *'
+//     every 10 minutes 'H/10 * * * *'   <-- current
+//     every 30 minutes 'H/30 * * * *'
+//     every hour       'H * * * *'
+//     every 2 hours    'H */2 * * *'
+//     every 4 hours    'H */4 * * *'
+//     every 6 hours    'H */6 * * *'
 //
-//  The leading H spreads load so builds do not all fire on the minute.
+//  The leading H spreads load so builds do not all fire on the same minute.
 //  It is read at Jenkinsfile parse time, so a single edit is all that is needed.
+//
+//  NOTE: every run registers a real parent, holds a real calendar slot and
+//  submits a sandbox payment, so a sub-hourly interval accumulates sandbox data
+//  quickly. disableConcurrentBuilds() below guarantees runs never overlap even
+//  if one takes longer than the interval.
 // =============================================================================
 
-def SCHEDULE_CRON = 'H/5 * * * *'
+def SCHEDULE_CRON = 'H/10 * * * *'
 
 pipeline {
     agent any
@@ -61,6 +68,9 @@ pipeline {
         SANDBOX_BASE_URL      = 'https://sandbox.hellothinkster.com'
         ELEVATE_STUDENTS_URL  = 'https://elevate-sandbox.hellothinkster.com/students'
         EXPECTED_PAYMENT_HOST = 'cde.openpaystaging.com'
+        // The widget is served from SANDBOX_BASE_URL but posts to a DIFFERENT
+        // origin. assertSandboxOnly() validates this one too, so it must be set.
+        SANDBOX_CORE_API_URL  = 'https://core-api-4.0-sandbox.hellothinkster.com'
 
         // ---- Secrets: Jenkins Credentials (Secret text) ---------------------
         // Create these once under Manage Jenkins > Credentials (see README).
@@ -71,13 +81,45 @@ pipeline {
         SANDBOX_CARD_EXPIRY   = credentials('thinkster-sandbox-card-expiry')
         SANDBOX_CARD_CVC      = credentials('thinkster-sandbox-card-cvc')
         // QA reCAPTCHA bypass cookie (cookie-string format: name=value).
-        // Allows the sandbox server to skip reCAPTCHA scoring for this session.
         // Credential kind: Secret text.  ID: thinkster-qa-bypass
+        //
+        // STATUS: applied to the browser context, but backend acceptance is
+        // UNVERIFIED. Captured on a real run, every call to the core-API origin
+        // carried no cookies at all, because fetch() defaults to
+        // credentials:'same-origin' and omits them cross-origin. Keep the
+        // credential bound, but do not rely on it to defeat reCAPTCHA until the
+        // real mechanism is confirmed with Thinkster's QA team.
         THINKSTER_QA_BYPASS   = credentials('thinkster-qa-bypass')
+
+        // ---- Non-secret test data -------------------------------------------
+        // Pinned here so a CI run is explicit and reproducible rather than
+        // relying on the code defaults. The generated parent email is always
+        // unique per build (see the "Generate unique test data" stage).
+        PARENT_FIRST_NAME   = 'Test'
+        PARENT_LAST_NAME    = 'Automation'
+        PARENT_COUNTRY      = 'United States'
+        PARENT_COUNTRY_CODE = '+1'
+        PARENT_PHONE        = '(908) 020-4336'
+        STUDENT_FIRST_NAME  = 'Test'
+        STUDENT_GRADE       = '5'
+        BILLING_POSTAL_CODE = '07001'
+        BILLING_COUNTRY     = 'United States'
 
         // ---- Run behaviour --------------------------------------------------
         CI                = 'true'
         VIDEO             = "${params.RECORD_VIDEO ? 'on' : 'off'}"
+        // Bounded retry for the app's own reCAPTCHA "try again" path on
+        // POST /api/register/lead.
+        MAX_SUBMIT_ATTEMPTS = '5'
+
+        // HEADLESS is deliberately LEFT UNSET so the suite runs HEADED.
+        // VERIFIED: the Vercel edge answers headless browsers with 403 Forbidden
+        // before any application code runs, so the signup widget never renders.
+        // Setting HEADLESS=1 here will break every build.
+        // Consequence for this agent: the Jenkins service must run with access to
+        // an interactive desktop session, otherwise headed Chrome cannot launch.
+        // The "Chrome launch smoke test" stage below proves that before the
+        // 15-minute journey starts.
 
         // Drive the Chrome already installed on the agent instead of downloading
         // Playwright's bundled Chromium (~130MB), whose CDN download kept timing
@@ -186,8 +228,8 @@ pipeline {
         stage('Generate unique test data') {
             steps {
                 // Requirement 4: a brand-new parent email for THIS build,
-                // stamped DDMMHHmmSS in Asia/Kolkata and suffixed with the build
-                // number so concurrent agents can never collide.
+                // test<DDMMHHmmSS>@tabtortest.com stamped in Asia/Kolkata and
+                // suffixed b<BUILD>e<EXECUTOR> so agents can never collide.
                 bat 'npm run generate:test-data'
             }
         }
@@ -201,9 +243,10 @@ pipeline {
         stage('Chrome launch smoke test') {
             steps {
                 // Requirement 6: prove the service account can actually launch Chrome
-                // before committing to the 15-minute registration journey. Opens
-                // about:blank only - it never contacts Thinkster and creates no
-                // account or payment data.
+                // HEADED before committing to the 15-minute registration journey -
+                // headed mode needs an interactive desktop session, and failing here
+                // is far cheaper than failing mid-journey. Opens about:blank only:
+                // it never contacts Thinkster and creates no account or payment data.
                 timeout(time: 2, unit: 'MINUTES') {
                     bat 'npm run smoke:chrome'
                 }

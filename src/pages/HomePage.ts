@@ -41,7 +41,24 @@ export class HomePage extends BasePage {
   private static readonly ERROR_SELECTOR = '#trial .tw-inline-msg, #trial .err';
   private readonly widgetError = this.page.locator(HomePage.ERROR_SELECTOR);
 
-  private static readonly MAX_SUBMIT_ATTEMPTS = 5;
+  private static readonly MAX_SUBMIT_ATTEMPTS = Number(process.env.MAX_SUBMIT_ATTEMPTS ?? 5);
+
+  /**
+   * Server/UI conditions that will NEVER succeed on a retry. Retrying these
+   * makes things worse: each attempt is another live registration request, which
+   * is how "Too many verification attempts for this number" was reached.
+   */
+  private static readonly NON_RETRYABLE =
+    /too many|rate limit|rate-limit|slow down|already (exists|registered|in use)|account exists|try again later|temporarily blocked/i;
+
+  /** True when the observed lead response must not be retried. */
+  private nonRetryableLead(): string | null {
+    const last = this.leadResponses[this.leadResponses.length - 1];
+    if (!last) return null;
+    if (last.status === 429) return `HTTP 429 (rate limited): ${last.body}`;
+    if (HomePage.NON_RETRYABLE.test(last.body)) return `HTTP ${last.status}: ${last.body}`;
+    return null;
+  }
 
   /** Live capture of the lead-capture API result, for accurate diagnostics. */
   private leadResponses: Array<{ status: number; body: string }> = [];
@@ -75,7 +92,29 @@ export class HomePage extends BasePage {
 
   async open(url: string): Promise<void> {
     this.attachLeadListener();
-    await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+    const response = await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+
+    /**
+     * Distinguish an EDGE BLOCK from an application or automation fault.
+     *
+     * VERIFIED: a headless browser receives 403 Forbidden from the Vercel edge
+     * (body "Forbidden", content-type text/plain) before any application code
+     * runs. Without this check the run failed 60s later with a misleading
+     * "#twEmailFld not visible", which looks like a selector defect.
+     */
+    const status = response?.status();
+    if (status && status >= 400) {
+      throw new Error(
+        `ENVIRONMENT FAILURE (not an automation defect): GET ${url} returned HTTP ${status}.\n` +
+          `The sandbox document was blocked before the signup widget could render, so no ` +
+          `registration step can run.\n` +
+          `Verified cause: the edge rejects headless browsers - headless returns 403 while a ` +
+          `headed browser returns 200 from the same machine and IP.\n` +
+          `Fix: run headed (the default; HEADLESS=1 forces headless), or have the sandbox ` +
+          `allow-list the CI agent.`,
+      );
+    }
+
     await this.expectVisible(this.emailField);
     await expect(this.page).toHaveTitle(/Thinkster/i);
   }
@@ -185,6 +224,22 @@ export class HomePage extends BasePage {
         `attempt ${attempt}: ${this.lastLeadResult()}` +
           (error ? ` | banner: "${error}"` : ' | no banner shown (silent failure)'),
       );
+
+      /**
+       * Abort immediately on a condition a retry cannot fix. Each retry is a real
+       * registration request against the live sandbox, so retrying a rate limit
+       * actively deepens it.
+       */
+      const fatal = this.nonRetryableLead() ?? (error && HomePage.NON_RETRYABLE.test(error) ? `banner: "${error}"` : null);
+      if (fatal) {
+        throw new Error(
+          `The sandbox rejected the lead with a NON-RETRYABLE condition on attempt ${attempt}.\n` +
+            `  ${fatal}\n` +
+            `Stopping immediately instead of retrying: further attempts would add more live ` +
+            `registration requests and deepen any rate limit.\n` +
+            `Observations:\n  ${transientErrors.join('\n  ')}`,
+        );
+      }
 
       if (attempt === HomePage.MAX_SUBMIT_ATTEMPTS) {
         throw new Error(

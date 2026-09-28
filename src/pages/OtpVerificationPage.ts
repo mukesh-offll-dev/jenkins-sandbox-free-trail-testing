@@ -74,9 +74,84 @@ export class OtpVerificationPage extends BasePage {
     return last ? `${last.endpoint} -> HTTP ${last.status} ${last.body}` : 'no verify-code/register-parent response observed';
   }
 
+  /**
+   * Error surfaces on the phone/OTP screens, verified live:
+   *   .tw-inline-msg - screen-level banner (e.g. "Too many verification attempts
+   *                    for this number.")
+   *   .err           - per-field validation
+   */
+  private static readonly ERROR_SELECTOR = '#trial .tw-inline-msg, #trial .err';
+
+  /** Conditions that mean the OTP screen will NEVER appear - fail fast. */
+  private static readonly BLOCKING_ERROR =
+    /too many|rate limit|rate-limit|try again later|temporarily blocked|invalid (phone|number)|not a valid/i;
+
   async expectLoaded(phoneLast4: string): Promise<void> {
     this.attachApiListener();
-    await this.expectVisible(this.digit(1), 90_000);
+
+    /**
+     * Race the OTP entry boxes against a blocking error banner.
+     *
+     * Previously this waited 90s for `#twOtp1` unconditionally. When the SMS
+     * step is rate limited ("Too many verification attempts for this number.")
+     * that field is never rendered, so the run burned the full 90s and then
+     * failed with a generic visibility timeout that hid the real cause.
+     */
+    const blocked = await Promise.race([
+      this.digit(1)
+        .waitFor({ state: 'visible', timeout: 90_000 })
+        .then(() => null)
+        .catch(() => 'timeout' as const),
+      this.page
+        .waitForFunction(
+          (sel) =>
+            Array.from(document.querySelectorAll(sel as string)).some(
+              (el) =>
+                (el as HTMLElement).offsetHeight > 0 &&
+                /too many|rate limit|rate-limit|try again later|temporarily blocked|invalid (phone|number)|not a valid/i.test(
+                  (el as HTMLElement).innerText,
+                ),
+            ),
+          OtpVerificationPage.ERROR_SELECTOR,
+          { timeout: 90_000 },
+        )
+        .then(() => 'error' as const)
+        .catch(() => null),
+    ]);
+
+    if (blocked === 'error' || blocked === 'timeout') {
+      const banners = this.page.locator(OtpVerificationPage.ERROR_SELECTOR);
+      const messages: string[] = [];
+      const count = await banners.count().catch(() => 0);
+      for (let i = 0; i < count; i++) {
+        const node = banners.nth(i);
+        if (await node.isVisible().catch(() => false)) {
+          const text = (await node.innerText().catch(() => '')).trim();
+          if (text) messages.push(text);
+        }
+      }
+      const blocking = messages.find((m) => OtpVerificationPage.BLOCKING_ERROR.test(m));
+
+      if (blocking) {
+        throw new Error(
+          `SMS verification was refused by the sandbox, so the OTP screen never appeared.\n` +
+            `  Application message: "${blocking}"\n` +
+            `  API: ${this.lastApiResult()}\n` +
+            `This is an ENVIRONMENT / TEST-DATA limit, not an automation defect: the suite reuses ` +
+            `one fixed mobile number, and the sandbox rate-limits verification per number. ` +
+            `Wait for the limit to reset or provision a different authorized test number. ` +
+            `Failing immediately instead of requesting another OTP.`,
+        );
+      }
+      if (blocked === 'timeout') {
+        throw new Error(
+          `The OTP entry field (${'#twOtp1'}) never became visible within 90s and no blocking ` +
+            `banner was shown.\n  API: ${this.lastApiResult()}\n` +
+            `Visible messages: ${messages.length ? messages.join(' | ') : '<none>'}`,
+        );
+      }
+    }
+
     await expect(this.widget).toContainText(/YOUR DETAILS · 3 OF 3/i);
     await expect(this.page.getByRole('heading', { name: /Enter the 6-digit code/i })).toBeVisible();
     // The app masks the destination number - assert only on the last 4 digits.

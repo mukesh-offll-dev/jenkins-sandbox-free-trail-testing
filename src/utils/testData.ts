@@ -47,7 +47,7 @@ export function buildRegistrationTestData(): RegistrationTestData {
   const generatedEmail = generateParentEmail({ uniqueSuffix: ciCollisionSuffix() });
 
   const parent: ParentData = {
-    firstName: process.env.PARENT_FIRST_NAME ?? 'Mukesh',
+    firstName: process.env.PARENT_FIRST_NAME ?? 'Test',
     lastName: process.env.PARENT_LAST_NAME ?? 'Automation',
     country: process.env.PARENT_COUNTRY ?? 'United States',
     countryCode: process.env.PARENT_COUNTRY_CODE ?? '+1',

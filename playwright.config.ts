@@ -57,6 +57,23 @@ export default defineConfig({
   use: {
     baseURL: process.env.SANDBOX_BASE_URL ?? 'https://sandbox.hellothinkster.com',
 
+    /**
+     * HEADED BY DEFAULT - REQUIRED, NOT A PREFERENCE.
+     *
+     * VERIFIED 2026-09-28, same machine, same IP, same minute:
+     *   headless Chromium -> GET https://sandbox.hellothinkster.com/  403 Forbidden
+     *                        (Vercel edge, content-type text/plain, body "Forbidden")
+     *   headed  Chromium -> GET https://sandbox.hellothinkster.com/  200 text/html
+     * The bypass cookie made no difference to this: the block happens at the edge
+     * before any application code runs, so the document never renders and the
+     * signup widget (#twEmailFld) never exists. That surfaced as a confusing
+     * "email field not visible" / email-step timeout.
+     *
+     * Force headless with HEADLESS=1 only to re-test whether the edge rule still
+     * applies; expect 403 until the sandbox allow-lists the automation.
+     */
+    headless: process.env.HEADLESS === '1',
+
     // Debug artefacts required by the QA brief.
     screenshot: 'only-on-failure',
     // Video needs the Playwright ffmpeg binary. Set VIDEO=off on agents where

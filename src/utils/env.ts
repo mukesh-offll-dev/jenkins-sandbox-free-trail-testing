@@ -11,6 +11,15 @@ export interface SandboxUrls {
   studentsPage: string;
   /** Host that must serve the hosted checkout for the payment step to be trusted. */
   expectedPaymentHost: string;
+  /**
+   * Origin that actually serves the registration API.
+   *
+   * VERIFIED 2026-09-28 against the live sandbox: the widget is served from
+   * sandbox.hellothinkster.com but posts to a DIFFERENT origin -
+   *   POST https://core-api-4.0-sandbox.hellothinkster.com/api/register/lead
+   * Cookies scoped to the marketing host are therefore never sent to it.
+   */
+  coreApi: string;
 }
 
 export interface Secrets {
@@ -42,7 +51,41 @@ export function urls(): SandboxUrls {
     registration: required('SANDBOX_BASE_URL', 'https://sandbox.hellothinkster.com'),
     studentsPage: required('ELEVATE_STUDENTS_URL', 'https://elevate-sandbox.hellothinkster.com/students'),
     expectedPaymentHost: required('EXPECTED_PAYMENT_HOST', 'cde.openpaystaging.com'),
+    coreApi: required('SANDBOX_CORE_API_URL', 'https://core-api-4.0-sandbox.hellothinkster.com'),
   };
+}
+
+/**
+ * Every authorized sandbox origin the QA bypass cookie must be applied to.
+ *
+ * WHY THIS IS NOT JUST THE REGISTRATION HOST (verified 2026-09-28)
+ * ---------------------------------------------------------------
+ * A cookie added with `url: 'https://sandbox.hellothinkster.com'` is stored with
+ * domain=sandbox.hellothinkster.com, so the browser sends it to that host only.
+ * The reCAPTCHA-guarded endpoint lives on a DIFFERENT origin:
+ *   POST https://core-api-4.0-sandbox.hellothinkster.com/api/register/lead
+ *
+ * !! IMPORTANT UNRESOLVED FINDING - the cookie mechanism cannot work here !!
+ * Captured with `request.allHeaders()` on a real headed run, every single API
+ * call to the core-API origin carried NO cookies at all - not the bypass cookie,
+ * not any other cookie:
+ *   [CROSS-ORIGIN] core-api-...../api/register/lead                 cookies: none
+ *   [CROSS-ORIGIN] core-api-...../api/registration/step-progress/v2 cookies: none
+ *   [CROSS-ORIGIN] core-api-...../api/ab/event                      cookies: none
+ * That is the expected browser behaviour: `fetch()` defaults to
+ * credentials:'same-origin', which omits cookies on cross-origin requests. So no
+ * cookie - at any domain, path or SameSite setting - can reach the guarded
+ * endpoint from the page.
+ *
+ * Scoping the cookie to the core-API origin is therefore CORRECT but currently
+ * INEFFECTIVE, and backend acceptance of the token remains UNVERIFIED. The real
+ * mechanism (a request header? a query parameter? a server-side allow-list?)
+ * must be confirmed against Thinkster's QA integration documentation before the
+ * integration is changed further. Do not guess it.
+ */
+export function qaBypassTargets(): string[] {
+  const { registration, coreApi } = urls();
+  return [registration, coreApi];
 }
 
 /**
@@ -86,10 +129,11 @@ export function qaBypassCookie(): QaBypassCookie | undefined {
  * Any attempt to point it at production fails the run immediately.
  */
 export function assertSandboxOnly(): void {
-  const { registration, studentsPage, expectedPaymentHost } = urls();
+  const { registration, studentsPage, expectedPaymentHost, coreApi } = urls();
   const checks: Array<[string, string]> = [
     ['SANDBOX_BASE_URL', registration],
     ['ELEVATE_STUDENTS_URL', studentsPage],
+    ['SANDBOX_CORE_API_URL', coreApi],
   ];
 
   for (const [name, value] of checks) {

@@ -17,6 +17,9 @@
     "smoke:chrome": "tsx scripts/chrome-smoke.ts",
     "ensure:ffmpeg": "tsx scripts/ensure-ffmpeg.ts",
     "typecheck": "tsc --noEmit",
+    "diagnose:email": "tsx scripts/diagnose-email-step.ts",
+    "diagnose:403": "tsx scripts/verify-403-guard.ts",
+    "diagnose:cookie": "tsx scripts/probe-cookie.ts",
     "clean": "node -e \"const fs=require('fs');['playwright-report','test-results','artifacts'].forEach(d=>fs.rmSync(d,{recursive:true,force:true}))\""
   },
   "devDependencies": {

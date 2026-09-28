@@ -2,16 +2,16 @@
  * Unique parent-email generation.
  *
  * Contract from the QA brief:
- *   prefix : mukesh
+ *   prefix : test
  *   domain : @tabtortest.com
  *   stamp  : DDMMHHmmSS using the CURRENT time in Asia/Kolkata
- *   example: mukesh2809111245@tabtortest.com
+ *   example: test2809111245@tabtortest.com
  *
  * The stamp is always computed from Asia/Kolkata regardless of the machine or
  * Playwright context timezone, so the address is stable across CI agents.
  */
 
-const EMAIL_PREFIX = 'mukesh';
+const EMAIL_PREFIX = 'test';
 const EMAIL_DOMAIN = 'tabtortest.com';
 const IST_TIMEZONE = 'Asia/Kolkata';
 

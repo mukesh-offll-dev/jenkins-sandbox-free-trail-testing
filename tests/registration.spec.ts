@@ -11,7 +11,7 @@ import { SchedulingPage } from '../src/pages/SchedulingPage';
 import { SandboxPaymentPage } from '../src/pages/SandboxPaymentPage';
 import { StudentSelectionPage } from '../src/pages/StudentSelectionPage';
 
-import { assertSandboxOnly, secrets, urls, qaBypassCookie } from '../src/utils/env';
+import { assertSandboxOnly, secrets, urls, qaBypassCookie, qaBypassTargets } from '../src/utils/env';
 import { buildRegistrationTestData } from '../src/utils/testData';
 import { RunReport } from '../src/utils/runReport';
 import { safeLog } from '../src/utils/mask';
@@ -73,15 +73,22 @@ test.describe('Thinkster sandbox - free trial registration', () => {
     // Apply the authorized QA reCAPTCHA bypass cookie if configured.
     // Set AFTER beforeEach has cleared Thinkster cookies, and BEFORE the first
     // navigation, so every sandbox request in this run carries the cookie.
-    // Scoped to the registration host only; never applied to non-sandbox URLs.
+    //
+    // Applied to EVERY authorized sandbox origin, not just the marketing host.
+    // VERIFIED 2026-09-28: POST /api/register/lead is served by
+    // core-api-4.0-sandbox.hellothinkster.com, and a cookie scoped to
+    // sandbox.hellothinkster.com is never sent there (confirmed with
+    // request.allHeaders(): the core-API request carried no cookies at all).
+    // Scoped to sandbox origins only - assertSandboxOnly() has already run.
     const bypass = qaBypassCookie();
     if (bypass) {
-      await context.addCookies([{
-        name: bypass.name,
-        value: bypass.value,
-        url: registration,
-      }]);
-      safeLog(`[run ${data.runId}] QA reCAPTCHA bypass cookie applied`);
+      for (const target of qaBypassTargets()) {
+        await context.addCookies([{ name: bypass.name, value: bypass.value, url: target }]);
+      }
+      const applied = qaBypassTargets().map((t) => new URL(t).host).join(', ');
+      safeLog(`[run ${data.runId}] QA reCAPTCHA bypass cookie applied to: ${applied}`);
+    } else {
+      safeLog(`[run ${data.runId}] no QA bypass cookie configured (THINKSTER_QA_BYPASS unset or malformed)`);
     }
 
     const home = new HomePage(page);
