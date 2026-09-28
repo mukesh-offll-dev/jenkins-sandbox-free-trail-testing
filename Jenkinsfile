@@ -75,7 +75,12 @@ pipeline {
         CI                = 'true'
         VIDEO             = "${params.RECORD_VIDEO ? 'on' : 'off'}"
         // Keep Playwright browsers in the workspace-independent agent cache.
-        PLAYWRIGHT_BROWSERS_PATH = "${env.LOCALAPPDATA}\\ms-playwright"
+        // LOCALAPPDATA is unset for some Windows service accounts, which would
+        // collapse this to a bare "\ms-playwright"; fall back to a fixed path.
+        PLAYWRIGHT_BROWSERS_PATH = "${env.LOCALAPPDATA ? env.LOCALAPPDATA + '\\ms-playwright' : 'C:\\ms-playwright'}"
+        // The default 30s connection timeout is too short for the ~130MB Chromium
+        // download on a throttled agent link - that is what made the install time out.
+        PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT = '120000'
         // Jenkins provides BUILD_NUMBER / EXECUTOR_NUMBER, which the suite uses
         // to guarantee a collision-free parent email per build.
     }
@@ -117,7 +122,26 @@ pipeline {
         stage('Install Playwright Chromium') {
             steps {
                 // Requirement 3. ffmpeg is required when VIDEO != 'off' (retain-on-failure).
-                bat 'npx playwright install chromium ffmpeg'
+                //
+                // `playwright install` is idempotent: it verifies the expected revision
+                // in PLAYWRIGHT_BROWSERS_PATH and re-downloads only what is missing, so
+                // a warm agent cache makes this a no-op and a retry never wastes a
+                // completed download. Retried 3x because CDN stalls are transient.
+                echo "Playwright browser cache: ${env.PLAYWRIGHT_BROWSERS_PATH}"
+                retry(3) {
+                    bat 'npx playwright install chromium ffmpeg'
+                }
+                // Fail fast with a readable message if the binaries are still absent,
+                // rather than surfacing it later as a confusing browser launch error.
+                bat '''
+                    @echo off
+                    if not exist "%PLAYWRIGHT_BROWSERS_PATH%" (
+                        echo ERROR: browser cache %PLAYWRIGHT_BROWSERS_PATH% was not created.
+                        exit /b 1
+                    )
+                    echo === Installed Playwright binaries ===
+                    dir /b "%PLAYWRIGHT_BROWSERS_PATH%"
+                '''
             }
         }
 
@@ -162,6 +186,13 @@ pipeline {
             // Optional: renders the Playwright report inline when the
             // HTML Publisher plugin is installed. Guarded so a missing plugin
             // never breaks the build.
+            //
+            // MUST catch Throwable, not Exception: Jenkins raises
+            // java.lang.NoSuchMethodError ("No such DSL method 'publishHTML'")
+            // when the HTML Publisher plugin is absent. NoSuchMethodError extends
+            // Error, not Exception, so a bare `catch (ignored)` - which Groovy
+            // treats as `catch (Exception ignored)` - lets it escape and fails the
+            // build during post-processing, masking the real test result.
             script {
                 try {
                     publishHTML(target: [
@@ -172,7 +203,7 @@ pipeline {
                         alwaysLinkToLastBuild: true,
                         allowMissing         : true
                     ])
-                } catch (ignored) {
+                } catch (Throwable ignored) {
                     echo 'HTML Publisher plugin not available - the report is still archived as a build artifact.'
                 }
             }
