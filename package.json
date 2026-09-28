@@ -1,0 +1,27 @@
+{
+  "name": "thinkster-sandbox-qa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end Playwright automation for the Thinkster sandbox free-trial registration journey",
+  "scripts": {
+    "test": "playwright test",
+    "test:registration": "playwright test tests/registration.spec.ts",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report playwright-report",
+    "trace": "playwright show-trace",
+    "install:browsers": "playwright install chromium",
+    "install:browsers:deps": "playwright install --with-deps chromium",
+    "generate:test-data": "tsx scripts/generate-test-data.ts",
+    "typecheck": "tsc --noEmit",
+    "clean": "node -e \"const fs=require('fs');['playwright-report','test-results','artifacts'].forEach(d=>fs.rmSync(d,{recursive:true,force:true}))\""
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.10.0",
+    "dotenv": "^16.4.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

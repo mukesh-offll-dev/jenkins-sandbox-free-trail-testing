@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# secrets - never commit
+.env
+.env.local
+
+# Playwright / test output
+playwright-report/
+test-results/
+artifacts/
+blob-report/
+playwright/.cache/
+.playwright-mcp/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# editor / OS
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+*.log
