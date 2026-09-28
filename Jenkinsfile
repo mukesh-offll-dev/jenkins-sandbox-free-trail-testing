@@ -116,8 +116,8 @@ pipeline {
 
         stage('Install Playwright Chromium') {
             steps {
-                // Requirement 3.
-                bat 'npx playwright install chromium'
+                // Requirement 3. ffmpeg is required when VIDEO != 'off' (retain-on-failure).
+                bat 'npx playwright install chromium ffmpeg'
             }
         }
 
