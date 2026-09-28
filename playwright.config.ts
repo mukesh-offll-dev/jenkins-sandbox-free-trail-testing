@@ -107,12 +107,12 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      // By default Playwright's own bundled Chromium is used, which is what the
-      // Jenkins agent installs via `npx playwright install chromium`.
+      // BROWSER_CHANNEL selects an already-installed system browser (chrome,
+      // msedge); leaving it unset falls back to Playwright's bundled Chromium.
       //
-      // Set BROWSER_CHANNEL=chrome (or msedge) to drive an already-installed
-      // system browser instead - useful on machines/networks where the Chromium
-      // CDN download is blocked.
+      // Jenkins sets BROWSER_CHANNEL=chrome because the bundled-Chromium CDN
+      // download times out on that agent. The Windows agent therefore drives
+      // C:\Program Files\Google\Chrome\Application\chrome.exe.
       use: {
         ...devices['Desktop Chrome'],
         ...(process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {}),

@@ -74,12 +74,20 @@ pipeline {
         // ---- Run behaviour --------------------------------------------------
         CI                = 'true'
         VIDEO             = "${params.RECORD_VIDEO ? 'on' : 'off'}"
-        // Keep Playwright browsers in the workspace-independent agent cache.
+
+        // Drive the Chrome already installed on the agent instead of downloading
+        // Playwright's bundled Chromium (~130MB), whose CDN download kept timing
+        // out on this agent. playwright.config.ts turns this into `channel`.
+        BROWSER_CHANNEL = 'chrome'
+        // Used only for the pre-flight existence/permission check below. Playwright
+        // itself resolves Chrome from the channel, not from this value.
+        CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+
+        // Still required when RECORD_VIDEO=true: ffmpeg is fetched into this cache.
         // LOCALAPPDATA is unset for some Windows service accounts, which would
         // collapse this to a bare "\ms-playwright"; fall back to a fixed path.
         PLAYWRIGHT_BROWSERS_PATH = "${env.LOCALAPPDATA ? env.LOCALAPPDATA + '\\ms-playwright' : 'C:\\ms-playwright'}"
-        // The default 30s connection timeout is too short for the ~130MB Chromium
-        // download on a throttled agent link - that is what made the install time out.
+        // The default 30s connection timeout is short for a throttled agent link.
         PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT = '120000'
         // Jenkins provides BUILD_NUMBER / EXECUTOR_NUMBER, which the suite uses
         // to guarantee a collision-free parent email per build.
@@ -119,28 +127,64 @@ pipeline {
             }
         }
 
-        stage('Install Playwright Chromium') {
+        stage('Verify Google Chrome') {
             steps {
-                // Requirement 3. ffmpeg is required when VIDEO != 'off' (retain-on-failure).
-                //
-                // `playwright install` is idempotent: it verifies the expected revision
-                // in PLAYWRIGHT_BROWSERS_PATH and re-downloads only what is missing, so
-                // a warm agent cache makes this a no-op and a retry never wastes a
-                // completed download. Retried 3x because CDN stalls are transient.
-                echo "Playwright browser cache: ${env.PLAYWRIGHT_BROWSERS_PATH}"
-                retry(3) {
-                    bat 'npx playwright install chromium ffmpeg'
-                }
-                // Fail fast with a readable message if the binaries are still absent,
-                // rather than surfacing it later as a confusing browser launch error.
+                // Requirement 3: drive the system Chrome, so `npx playwright install
+                // chromium` is deliberately NOT run anywhere in this pipeline.
+                // Confirm the binary exists and is readable by the Jenkins service
+                // account; actual launchability is proven by the smoke test below.
+                echo "BROWSER_CHANNEL=${env.BROWSER_CHANNEL}  VIDEO=${env.VIDEO}"
                 bat '''
                     @echo off
-                    if not exist "%PLAYWRIGHT_BROWSERS_PATH%" (
-                        echo ERROR: browser cache %PLAYWRIGHT_BROWSERS_PATH% was not created.
+                    if not exist "%CHROME_PATH%" (
+                        echo ERROR: Google Chrome was not found at:
+                        echo        %CHROME_PATH%
+                        echo.
+                        echo Install Chrome for ALL USERS on this agent ^(a per-user
+                        echo install is invisible to the Jenkins service account^), or
+                        echo point CHROME_PATH at the correct location.
                         exit /b 1
                     )
-                    echo === Installed Playwright binaries ===
-                    dir /b "%PLAYWRIGHT_BROWSERS_PATH%"
+                    echo Found Chrome: %CHROME_PATH%
+                '''
+                // Reading the version proves the service account really can read the
+                // file, not merely that the path exists. Invoked through `bat` rather
+                // than the `powershell` DSL step so this needs no extra plugin.
+                bat '''
+                    @echo off
+                    echo Running as: %USERNAME%
+                    powershell -NoProfile -Command "Write-Host ('Chrome version: ' + (Get-Item $env:CHROME_PATH).VersionInfo.ProductVersion)"
+                '''
+            }
+        }
+
+        stage('Install Playwright FFmpeg') {
+            // Requirement 5: only needed when video recording is enabled. With
+            // RECORD_VIDEO unchecked, VIDEO=off and playwright.config.ts disables
+            // video, so this stage is skipped entirely and nothing is downloaded.
+            when { expression { params.RECORD_VIDEO } }
+            steps {
+                // ffmpeg only - never chromium. It is ~1MB, so unlike the 130MB
+                // Chromium download this is not a bottleneck. Retried for transient
+                // CDN stalls; `playwright install` is idempotent so a warm cache
+                // makes it a no-op.
+                retry(3) {
+                    bat 'npx playwright install ffmpeg'
+                }
+                bat '''
+                    @echo off
+                    dir /b "%PLAYWRIGHT_BROWSERS_PATH%\\ffmpeg-*" >nul 2>&1
+                    if errorlevel 1 (
+                        echo ERROR: the Playwright ffmpeg binary is missing from:
+                        echo        %PLAYWRIGHT_BROWSERS_PATH%
+                        echo.
+                        echo Video recording is enabled, which requires it. Either:
+                        echo   1. install it on the agent:  npx playwright install ffmpeg
+                        echo   2. or re-run this job with RECORD_VIDEO unchecked to
+                        echo      disable video recording entirely.
+                        exit /b 1
+                    )
+                    echo FFmpeg present in %PLAYWRIGHT_BROWSERS_PATH%
                 '''
             }
         }
@@ -157,6 +201,18 @@ pipeline {
         stage('Type check') {
             steps {
                 bat 'npm run typecheck'
+            }
+        }
+
+        stage('Chrome launch smoke test') {
+            steps {
+                // Requirement 6: prove the service account can actually launch Chrome
+                // before committing to the 15-minute registration journey. Opens
+                // about:blank only - it never contacts Thinkster and creates no
+                // account or payment data.
+                timeout(time: 2, unit: 'MINUTES') {
+                    bat 'npm run smoke:chrome'
+                }
             }
         }
 

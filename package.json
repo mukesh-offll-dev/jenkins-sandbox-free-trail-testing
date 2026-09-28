@@ -14,6 +14,7 @@
     "install:browsers": "playwright install chromium",
     "install:browsers:deps": "playwright install --with-deps chromium",
     "generate:test-data": "tsx scripts/generate-test-data.ts",
+    "smoke:chrome": "tsx scripts/chrome-smoke.ts",
     "typecheck": "tsc --noEmit",
     "clean": "node -e \"const fs=require('fs');['playwright-report','test-results','artifacts'].forEach(d=>fs.rmSync(d,{recursive:true,force:true}))\""
   },
