@@ -23,6 +23,7 @@
 //  if one takes longer than the interval.
 // =============================================================================
 
+def SCHEDULE_ENABLED = false
 def SCHEDULE_CRON = 'H/10 * * * *'
 
 pipeline {
@@ -42,7 +43,18 @@ pipeline {
     }
 
     triggers {
-        cron(SCHEDULE_CRON)
+        // SCHEDULE DISABLED FOR INVESTIGATION (SCHEDULE_ENABLED = false above).
+        //
+        // An empty cron spec declares no timer, so the previously-registered
+        // 10-minute TimerTrigger is dropped the first time this Jenkinsfile is
+        // parsed. Builds then only start when triggered manually.
+        //
+        // WHY: every run registers a real parent, consumes an SMS verification
+        // against the one shared phone number and books a real calendar slot.
+        // Build #64 alone created two parents and two bookings. A 10-minute
+        // interval accumulated sandbox data and deepened the per-number SMS rate
+        // limit faster than the failures could be diagnosed.
+        cron(SCHEDULE_ENABLED ? SCHEDULE_CRON : '')
     }
 
     parameters {

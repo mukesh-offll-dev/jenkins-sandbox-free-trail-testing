@@ -8,7 +8,7 @@ import { StudentRegistrationPage } from '../src/pages/StudentRegistrationPage';
 import { ParentRegistrationPage } from '../src/pages/ParentRegistrationPage';
 import { OtpVerificationPage } from '../src/pages/OtpVerificationPage';
 import { SchedulingPage } from '../src/pages/SchedulingPage';
-import { SandboxPaymentPage } from '../src/pages/SandboxPaymentPage';
+import { SandboxPaymentPage, type ActivationFlow } from '../src/pages/SandboxPaymentPage';
 import { StudentSelectionPage } from '../src/pages/StudentSelectionPage';
 
 import { assertSandboxOnly, secrets, urls, qaBypassCookie, qaBypassTargets } from '../src/utils/env';
@@ -175,7 +175,34 @@ test.describe('Thinkster sandbox - free trial registration', () => {
       });
 
       // ---------------------------------------------------------------- step 6
-      await test.step('Activate the trial through the sandbox hosted checkout', async () => {
+      /**
+       * The sandbox runs a live A/B test on trial activation and serves one of
+       * two real arms (verified in Jenkins build #64):
+       *   card-required        gift offer -> plan -> hosted checkout -> activated
+       *   activated-without-card  booked -> trial activated directly, no checkout
+       * Branching here is NOT a way to skip payment: the no-card arm is asserted
+       * to have genuinely activated a trial AND to have no checkout iframe
+       * present, so a real payment screen can never be bypassed silently.
+       */
+      let activationFlow: ActivationFlow = 'card-required';
+
+      await test.step('Activate the trial (detecting the A/B activation arm)', async () => {
+        activationFlow = await payment.detectActivationFlow();
+        report.step('activation-arm-detected', activationFlow);
+
+        if (activationFlow === 'activated-without-card') {
+          const summary = await payment.expectActivatedWithoutCard();
+          report.step(
+            'trial-activated-without-card',
+            `no hosted checkout was served by the application; ${summary.slice(0, 160)}`,
+          );
+          safeLog(
+            `[run ${data.runId}] A/B arm "activated-without-card": the sandbox activated the ` +
+              `trial without requesting a card, so no payment was submitted.`,
+          );
+          return;
+        }
+
         await payment.continuePastGiftOffer();
         const plan = await payment.acceptDefaultPlan();
 
@@ -191,7 +218,10 @@ test.describe('Thinkster sandbox - free trial registration', () => {
 
       // ---------------------------------------------------------------- step 7
       await test.step('Follow the hand-off into the Elevate student selection page', async () => {
-        studentsTab = await payment.startMathJourney();
+        studentsTab =
+          activationFlow === 'activated-without-card'
+            ? await payment.openElevateApp()
+            : await payment.startMathJourney();
         report.step('handoff-to-elevate', studentsTab.url());
       });
 

@@ -47,21 +47,31 @@ export class HomePage extends BasePage {
    * Server/UI conditions that will NEVER succeed on a retry. Retrying these
    * makes things worse: each attempt is another live registration request, which
    * is how "Too many verification attempts for this number" was reached.
+   *
+   * NOTE: `reCAPTCHA verification failed` is included explicitly. It ends with
+   * "Please try again.", which does NOT match the `try again later` pattern, so
+   * Jenkins build #64 retried it five times and produced five 403s in a row.
+   * A bot-scoring rejection is a server-side decision about this browser/IP; it
+   * does not become true on the 5th identical attempt.
    */
   private static readonly NON_RETRYABLE =
-    /too many|rate limit|rate-limit|slow down|already (exists|registered|in use)|account exists|try again later|temporarily blocked/i;
+    /too many|rate limit|rate-limit|slow down|already (exists|registered|in use)|account exists|try again later|temporarily blocked|recaptcha verification failed/i;
 
   /** True when the observed lead response must not be retried. */
   private nonRetryableLead(): string | null {
     const last = this.leadResponses[this.leadResponses.length - 1];
     if (!last) return null;
     if (last.status === 429) return `HTTP 429 (rate limited): ${last.body}`;
+    // Any 403 on the lead endpoint is a server-side refusal (bot scoring or an
+    // unrecognised QA bypass). Verified in build #64: 5 attempts -> 5x 403.
+    if (last.status === 403) return `HTTP 403 (server refused): ${last.body}`;
     if (HomePage.NON_RETRYABLE.test(last.body)) return `HTTP ${last.status}: ${last.body}`;
     return null;
   }
 
   /** Live capture of the lead-capture API result, for accurate diagnostics. */
   private leadResponses: Array<{ status: number; body: string }> = [];
+  private leadListenerAttached = false;
 
   constructor(page: Page) {
     super(page);
@@ -70,9 +80,15 @@ export class HomePage extends BasePage {
   /**
    * Record the real status/body of every POST /api/register/lead so failures
    * report what the server actually said instead of inferring it from the UI.
+   *
+   * Idempotent, and attached from BOTH open() and submitEmail(): guarding on
+   * `leadResponses.length` was wrong, because before the first response that
+   * array is still empty, so repeated calls stacked duplicate listeners - and
+   * calling submitEmail() without open() left diagnostics completely blind.
    */
   private attachLeadListener(): void {
-    if (this.leadResponses.length > 0) return;
+    if (this.leadListenerAttached) return;
+    this.leadListenerAttached = true;
     this.page.on('response', async (response) => {
       if (!/\/api\/register\/lead$/.test(response.url())) return;
       let body = '';
@@ -181,6 +197,7 @@ export class HomePage extends BasePage {
    * non-advance is also treated as retryable rather than as an automation fault.
    */
   async submitEmail(): Promise<{ attempts: number; transientErrors: string[] }> {
+    this.attachLeadListener();
     await this.waitForRecaptchaReady();
 
     const transientErrors: string[] = [];

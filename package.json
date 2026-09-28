@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "thinkster-sandbox-qa",
   "version": "1.0.0",
   "private": true,
@@ -17,6 +17,7 @@
     "smoke:chrome": "tsx scripts/chrome-smoke.ts",
     "ensure:ffmpeg": "tsx scripts/ensure-ffmpeg.ts",
     "typecheck": "tsc --noEmit",
+    "test:offline": "playwright test tests/activation-arm.mock.spec.ts tests/lead-403.mock.spec.ts",
     "diagnose:email": "tsx scripts/diagnose-email-step.ts",
     "diagnose:403": "tsx scripts/verify-403-guard.ts",
     "diagnose:cookie": "tsx scripts/probe-cookie.ts",
@@ -30,3 +31,4 @@
     "typescript": "^5.7.2"
   }
 }
+

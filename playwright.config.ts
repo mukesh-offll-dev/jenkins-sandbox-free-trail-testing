@@ -45,7 +45,20 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   forbidOnly: isCI,
-  retries: isCI ? 1 : 0,
+  /**
+   * NO automatic retries - deliberately, including on CI.
+   *
+   * VERIFIED in Jenkins build #64: the first attempt failed at the email step,
+   * then `retries: 1` re-ran the ENTIRE stateful journey. The retry generated a
+   * second parent email, created a second parent account, consumed another SMS
+   * verification against the same shared phone number and booked a second real
+   * calendar slot (Fri 2 Oct 7:30 PM) before failing at the payment step.
+   *
+   * A retry of this test is never a free re-attempt: it duplicates live sandbox
+   * data and, had the first attempt failed *after* checkout, could submit payment
+   * twice. Set RETRIES explicitly if a controlled retry is ever wanted.
+   */
+  retries: Number(process.env.RETRIES ?? 0),
 
   reporter: [
     ['list'],
