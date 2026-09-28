@@ -16,7 +16,7 @@
 //  It is read at Jenkinsfile parse time, so a single edit is all that is needed.
 // =============================================================================
 
-def SCHEDULE_CRON = 'H */2 * * *'
+def SCHEDULE_CRON = 'H/5 * * * *'
 
 pipeline {
     agent any
