@@ -122,7 +122,20 @@ pipeline {
         VIDEO             = "${params.RECORD_VIDEO ? 'on' : 'off'}"
         // Bounded retry for the app's own reCAPTCHA "try again" path on
         // POST /api/register/lead.
-        MAX_SUBMIT_ATTEMPTS = '5'
+        //
+        // Lowered from 5 to 2 during the build #64 investigation. A 403
+        // ("reCAPTCHA verification failed") is now classified as NON-RETRYABLE
+        // in HomePage and aborts on the first attempt, so this ceiling only
+        // still applies to the genuinely transient
+        // 400 "reCAPTCHA token is required" race. Keeping it low limits how many
+        // live registration requests a single failing build can generate.
+        MAX_SUBMIT_ATTEMPTS = '2'
+
+        // No Playwright-level retries: a retry re-runs the ENTIRE stateful
+        // journey. In build #64 that created a second parent account, consumed
+        // another SMS verification on the shared number and booked a second real
+        // calendar slot. Raise this only for a deliberate, supervised run.
+        RETRIES = '0'
 
         // HEADLESS is deliberately LEFT UNSET so the suite runs HEADED.
         // VERIFIED: the Vercel edge answers headless browsers with 403 Forbidden
