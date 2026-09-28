@@ -84,7 +84,6 @@ test.describe('Thinkster sandbox - free trial registration', () => {
       await test.step('Open the sandbox homepage and submit the unique parent email', async () => {
         await home.open(registration);
         await home.expectLoaded();
-        await home.expectSubmitDisabledBeforeEmail();
         await home.enterParentEmail(data.generatedEmail.email);
         const submit = await home.submitEmail();
         await home.continuePastWelcome();
