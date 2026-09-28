@@ -106,31 +106,47 @@ export class OtpVerificationPage extends BasePage {
     }
 
     for (let attempt = 1; attempt <= OtpVerificationPage.MAX_VERIFY_ATTEMPTS; attempt++) {
-      // Success == the OTP screen unmounts. Failure == the widget re-enables the
-      // CTA (and shows a banner). Race the two real outcomes.
+      // Two real outcomes, each of which is genuinely waited for:
+      //   the OTP screen unmounts   -> verification and account creation are done
+      //   #twCtaOtp becomes ENABLED -> the app is offering its own retry
+      //
+      // Waiting for the CTA to be merely *visible* is wrong: it is rendered
+      // visible-but-disabled for the entire auto-submit window (expectLoaded()
+      // asserts precisely that), so such a wait resolves in milliseconds and the
+      // loop concludes "account creation failed" before the auto-submit has even
+      // answered. Enabled-ness is the only signal that distinguishes the states.
       const outcome = await Promise.race([
         this.digit(1)
-          .waitFor({ state: 'hidden', timeout: 90_000 })
+          .waitFor({ state: 'hidden', timeout: 120_000 })
           .then(() => 'verified' as const)
-          .catch(() => 'pending' as const),
-        this.submitButton
-          .waitFor({ state: 'visible', timeout: 90_000 })
-          .then(async () => ((await this.submitButton.isEnabled()) ? ('retryable' as const) : ('pending' as const)))
-          .catch(() => 'pending' as const),
+          .catch(() => 'timeout' as const),
+        expect(this.submitButton)
+          .toBeEnabled({ timeout: 120_000 })
+          .then(() => 'retryable' as const)
+          .catch(() => 'timeout' as const),
       ]);
 
       if (outcome === 'verified') {
         return { attempts: attempt, transientErrors };
       }
 
-      // Re-check: the CTA becoming enabled is the app's "you may retry" signal.
-      const canRetry = await this.submitButton.isEnabled().catch(() => false);
-      const stillOnOtp = await this.digit(1).isVisible().catch(() => false);
+      // An enabled CTA does NOT by itself mean failure: the widget enables it as
+      // soon as POST /api/sms/verify-code succeeds (banner "Phone verified
+      // successfully!") while POST /api/register/parent is still in flight.
+      // Clicking in that window fires a second register/parent round trip, which
+      // the API answers "Parent already exists" and the widget resets to
+      // GET STARTED · 3 OF 8, destroying the run. So always let the success path
+      // finish first and only then treat the screen as stuck.
+      const unmounted = await this.digit(1)
+        .waitFor({ state: 'hidden', timeout: 30_000 })
+        .then(() => true)
+        .catch(() => false);
 
-      if (!stillOnOtp) {
+      if (unmounted) {
         return { attempts: attempt, transientErrors };
       }
 
+      const canRetry = await this.submitButton.isEnabled().catch(() => false);
       const banner = (await this.visibleErrorText()).join(' / ');
       transientErrors.push(`attempt ${attempt}: ${this.lastApiResult()}${banner ? ` | banner: "${banner}"` : ''}`);
 
@@ -144,9 +160,8 @@ export class OtpVerificationPage extends BasePage {
         );
       }
 
-      // Take the app's own retry path: the CTA is now enabled, so clicking it is
-      // correct here (unlike during the auto-submit window, where it is disabled).
-      await this.page.waitForTimeout(4_000 * attempt);
+      // Take the app's own retry path: the CTA is enabled and the screen has not
+      // unmounted, so this is the documented failure state, not the auto-submit window.
       await this.submitButton.click();
     }
 

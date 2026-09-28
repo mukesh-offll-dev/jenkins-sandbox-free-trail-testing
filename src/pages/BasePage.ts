@@ -47,6 +47,17 @@ export abstract class BasePage {
    */
   protected static readonly WIDGET_ERROR_SELECTOR = '.tw-inline-msg, .err';
 
+  /**
+   * `.tw-inline-msg` is reused for BOTH failure banners and success toasts - the
+   * OTP screen renders "Phone verified successfully!" through it. Treating that
+   * as an error made a succeeding step report a phantom failure and pointed the
+   * diagnostics at the wrong cause, so success wording is excluded here.
+   * The negative-lookahead terms keep "unsuccessful"/"not successful" as errors.
+   */
+  private static isSuccessMessage(text: string): boolean {
+    return /success/i.test(text) && !/unsuccessful|\b(not|failed|fail|error|unable|invalid)\b/i.test(text);
+  }
+
   async expectNoVisibleWidgetError(): Promise<void> {
     const errors = await this.visibleErrorText();
     expect(errors, `The widget displayed error(s): ${JSON.stringify(errors)}`).toEqual([]);
@@ -54,7 +65,7 @@ export abstract class BasePage {
 
   /** Collect any currently visible widget error text (for failure diagnostics). */
   async visibleErrorText(): Promise<string[]> {
-    return this.widget
+    const messages = await this.widget
       .locator(BasePage.WIDGET_ERROR_SELECTOR)
       .evaluateAll((nodes) =>
         nodes
@@ -62,5 +73,7 @@ export abstract class BasePage {
           .filter((n) => n.visible && n.text.length > 0)
           .map((n) => n.text),
       );
+
+    return messages.filter((text) => !BasePage.isSuccessMessage(text));
   }
 }
