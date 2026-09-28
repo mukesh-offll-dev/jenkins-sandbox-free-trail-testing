@@ -159,33 +159,23 @@ pipeline {
         }
 
         stage('Install Playwright FFmpeg') {
-            // Requirement 5: only needed when video recording is enabled. With
-            // RECORD_VIDEO unchecked, VIDEO=off and playwright.config.ts disables
-            // video, so this stage is skipped entirely and nothing is downloaded.
+            // Only needed when video recording is enabled. With RECORD_VIDEO
+            // unchecked, VIDEO=off and playwright.config.ts disables video, so this
+            // stage is skipped entirely and nothing is downloaded.
             when { expression { params.RECORD_VIDEO } }
             steps {
-                // ffmpeg only - never chromium. It is ~1MB, so unlike the 130MB
-                // Chromium download this is not a bottleneck. Retried for transient
-                // CDN stalls; `playwright install` is idempotent so a warm cache
-                // makes it a no-op.
-                retry(3) {
-                    bat 'npx playwright install ffmpeg'
+                // ffmpeg only - never chromium (the agent drives system Chrome).
+                //
+                // Delegated to scripts/ensure-ffmpeg.ts because `npx playwright
+                // install ffmpeg` reproducibly times out on this network while
+                // curl.exe fetches the same archive in under a second. The script
+                // skips the download when the required revision is already cached,
+                // tries the official installer first, then falls back to curl.exe.
+                // No retry() wrapper: the script already owns its fallback, so
+                // retrying would only repeat the slow official-installer timeout.
+                timeout(time: 6, unit: 'MINUTES') {
+                    bat 'npm run ensure:ffmpeg'
                 }
-                bat '''
-                    @echo off
-                    dir /b "%PLAYWRIGHT_BROWSERS_PATH%\\ffmpeg-*" >nul 2>&1
-                    if errorlevel 1 (
-                        echo ERROR: the Playwright ffmpeg binary is missing from:
-                        echo        %PLAYWRIGHT_BROWSERS_PATH%
-                        echo.
-                        echo Video recording is enabled, which requires it. Either:
-                        echo   1. install it on the agent:  npx playwright install ffmpeg
-                        echo   2. or re-run this job with RECORD_VIDEO unchecked to
-                        echo      disable video recording entirely.
-                        exit /b 1
-                    )
-                    echo FFmpeg present in %PLAYWRIGHT_BROWSERS_PATH%
-                '''
             }
         }
 
