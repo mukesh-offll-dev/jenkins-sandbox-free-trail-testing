@@ -87,6 +87,22 @@ export class SandboxPaymentPage extends BasePage {
         .catch(() => null),
     ]);
 
+    if (decided === 'card-required') {
+      // The widget renders the gift CTA as its default/loading state while
+      // POST /api/ab/assign is still in-flight. On slower machines (Jenkins)
+      // the race above can fire on that transient render before the A/B
+      // assignment settles and switches the widget to the no-card arm.
+      // Wait for pending network activity to finish, then re-confirm.
+      await this.page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
+      const stillThere = await this.giftContinue.isVisible().catch(() => false);
+      if (!stillThere) {
+        // Arm switched to no-card during the A/B assignment window.
+        await this.elevateAppCta.waitFor({ state: 'visible', timeout: 30_000 });
+        return 'activated-without-card';
+      }
+      return 'card-required';
+    }
+
     if (decided) return decided;
 
     const widgetText = (await this.widget.innerText().catch(() => '<widget not readable>'))
@@ -125,7 +141,10 @@ export class SandboxPaymentPage extends BasePage {
 
   /** ACTIVATE TRIAL · 1 OF 3 - the $25 gift-card offer. */
   async continuePastGiftOffer(): Promise<void> {
-    await this.expectVisible(this.giftContinue, 120_000);
+    // detectActivationFlow already confirmed this element is present and
+    // network-settled; 15s is sufficient and surfaces arm-switch regressions
+    // quickly rather than hanging for 2 minutes.
+    await this.expectVisible(this.giftContinue, 15_000);
     await expect(this.widget).toContainText(/ACTIVATE TRIAL · 1 OF 3/i);
     await this.giftContinue.click();
     await this.expectVisible(this.planContinue, 90_000);

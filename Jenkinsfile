@@ -23,8 +23,8 @@
 //  if one takes longer than the interval.
 // =============================================================================
 
-def SCHEDULE_ENABLED = false
-def SCHEDULE_CRON = 'H/10 * * * *'
+def SCHEDULE_ENABLED = true
+def SCHEDULE_CRON = 'H 8,20 * * *'
 
 pipeline {
     agent any
