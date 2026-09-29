@@ -260,20 +260,33 @@ export class SandboxPaymentPage extends BasePage {
   }
 
   /**
-   * Final hand-off. VERIFIED: "Start your child's math journey →" opens the
-   * Elevate app in a NEW TAB (popup) - it does not navigate the current page.
-   * Returns the popup page, which stays inside the same browser context.
+   * Final hand-off for the card-required arm.
+   *
+   * Handles both observed behaviours defensively: on some environments
+   * (verified local) the CTA opens a new tab; on others (verified Jenkins)
+   * it navigates the current tab. Using Promise.all hard-requires a popup
+   * event and hangs for 120s when same-tab navigation occurs instead.
+   * Pattern mirrors openElevateApp() which already handles this correctly.
    */
   async startMathJourney(): Promise<Page> {
     await expect(this.successCta).toBeEnabled();
 
-    const [popup] = await Promise.all([
-      this.page.context().waitForEvent('page', { timeout: 120_000 }),
-      this.successCta.click(),
-    ]);
+    const popupPromise = this.page
+      .context()
+      .waitForEvent('page', { timeout: 30_000 })
+      .catch(() => null);
 
-    await popup.waitForLoadState('domcontentloaded');
-    return popup;
+    await this.successCta.click();
+    const popup = await popupPromise;
+
+    if (popup) {
+      await popup.waitForLoadState('domcontentloaded');
+      return popup;
+    }
+
+    // Same-tab navigation: the hand-off happened in place.
+    await this.page.waitForLoadState('domcontentloaded');
+    return this.page;
   }
 
   /**
