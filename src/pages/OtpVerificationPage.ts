@@ -152,7 +152,7 @@ export class OtpVerificationPage extends BasePage {
       }
     }
 
-    await expect(this.widget).toContainText(/YOUR DETAILS · 3 OF 3/i);
+    await this.expectStepLabel(/YOUR DETAILS · 3 OF 3/i);
     await expect(this.page.getByRole('heading', { name: /Enter the 6-digit code/i })).toBeVisible();
     // The app masks the destination number - assert only on the last 4 digits.
     await expect(this.widget).toContainText(new RegExp(`\\*{3}-\\*{3}-${phoneLast4}`));
@@ -174,10 +174,14 @@ export class OtpVerificationPage extends BasePage {
     this.attachApiListener();
     const transientErrors: string[] = [];
 
+    // Human-paced entry: POST /api/register/parent fires on the 6th digit and is
+    // reCAPTCHA v3 scored, and sub-second entry of all six digits reads as a bot.
+    const digitGapMs = Number(process.env.OTP_DIGIT_DELAY_MS ?? 2_000);
     for (let i = 0; i < 6; i++) {
       const box = this.digit(i + 1);
       await box.click();
       await box.pressSequentially(otp[i], { delay: 80 });
+      if (i < 5 && digitGapMs > 0) await this.page.waitForTimeout(digitGapMs);
     }
 
     for (let attempt = 1; attempt <= OtpVerificationPage.MAX_VERIFY_ATTEMPTS; attempt++) {

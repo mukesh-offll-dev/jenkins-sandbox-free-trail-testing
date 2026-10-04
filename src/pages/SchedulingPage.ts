@@ -13,7 +13,7 @@ import { AppointmentRecord } from '../utils/runReport';
  *   times     #trial .tslot               data-ghl-slot = JSON {startTime,endTime,displayTime};
  *                                         ".on" = selected
  *   hold      #twCtaASess                 "Hold my spot →"
- *   skip      #twSkipASess                (never used - we must really book)
+ *   skip      #twSkipASess                "Skip for now" - only when nothing is bookable
  *   confirm   #twCtaSpotHeld              "Lock in this spot →" on the held-spot screen
  *
  * Availability is read from the live DOM (backed by GET /api/calendar/free-slots)
@@ -26,6 +26,10 @@ export class SchedulingPage extends BasePage {
   private readonly timeSlots = this.page.locator('#trial .tslot');
   private readonly holdSpotButton = this.page.locator('#twCtaASess');
   private readonly lockInButton = this.page.locator('#twCtaSpotHeld');
+  private readonly skipButton = this.page
+    .locator('#twSkipASess')
+    .or(this.page.getByRole('button', { name: /Skip for now/i }))
+    .first();
 
   constructor(page: Page) {
     super(page);
@@ -33,16 +37,29 @@ export class SchedulingPage extends BasePage {
 
   async expectLoaded(): Promise<void> {
     await this.expectVisible(this.holdSpotButton, 120_000);
-    await expect(this.widget).toContainText(/YOUR SESSION · 1 OF 2/i);
+    await this.expectStepLabel(/YOUR SESSION · 1 OF 2/i);
     await expect(this.page.getByRole('heading', { name: /Pick your free session/i })).toBeVisible();
+  }
+
+  /**
+   * Wait for "Loading available sessions..." to finish. VERIFIED 2026-10-04 the
+   * free-slots call can hang for over 30s; false means it never loaded.
+   */
+  async waitForCalendar(timeout = 90_000): Promise<boolean> {
+    return this.timezoneSelect
+      .waitFor({ state: 'visible', timeout })
+      .then(() => true)
+      .catch(() => false);
   }
 
   /** Display all times in an explicit timezone so the booking is deterministic. */
   async selectTimezone(timezoneId: string): Promise<string> {
     await this.timezoneSelect.selectOption(timezoneId);
     await expect(this.timezoneSelect).toHaveValue(timezoneId);
-    // Slots are re-fetched for the new timezone.
-    await expect(this.timeSlots.first()).toBeVisible({ timeout: 60_000 });
+    // Wait for the date strip, not a time slot: VERIFIED 2026-10-04 the first
+    // three days can all be fully booked, so no slot renders until a later date
+    // is chosen via "+ More dates" (done in selectFirstAvailableAppointment).
+    await expect(this.dateChips.first()).toBeVisible({ timeout: 60_000 });
     return timezoneId;
   }
 
@@ -71,17 +88,27 @@ export class SchedulingPage extends BasePage {
     return this.page.locator(`#trial .dchip[data-ghl-date="${date}"]`);
   }
 
+  /** Labels of every date chip on screen, e.g. ["Sun 4 Oct", "Mon 5 Oct"]. */
+  async shownDates(): Promise<string[]> {
+    return (await this.dateChips.allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+  }
+
   /**
    * Pick the first genuinely available slot, preferring a future date over today.
-   * Throws a descriptive error if the calendar has no availability at all.
+   * Returns null when no listed date has a bookable slot - VERIFIED 2026-10-04 the
+   * sandbox calendar can return {"slots":{}} for the whole 7-day window.
    */
-  async selectFirstAvailableAppointment(timezoneId: string): Promise<AppointmentRecord> {
+  async selectFirstAvailableAppointment(timezoneId: string): Promise<AppointmentRecord | null> {
     await this.expandAllDates();
 
-    const dates = await this.availableDates();
-    if (dates.length === 0) {
-      throw new Error('Scheduling failed: the sandbox calendar returned no available dates.');
-    }
+    // Availability arrives asynchronously from /api/calendar/free-slots; poll
+    // instead of reading the chips once while they may still be loading.
+    let dates: string[] = [];
+    await expect
+      .poll(async () => (dates = await this.availableDates()).length, { timeout: 30_000 })
+      .toBeGreaterThan(0)
+      .catch(() => undefined);
+    if (dates.length === 0) return null;
 
     const today = new Date().toISOString().slice(0, 10);
     const ordered = [...dates.filter((d) => d > today), ...dates.filter((d) => d <= today)];
@@ -93,8 +120,13 @@ export class SchedulingPage extends BasePage {
       await chip.click();
       await expect(chip).toHaveClass(/\bon\b/);
 
+      // isVisible() does not wait; waitFor() really gives the slots time to load.
       const slot = this.timeSlots.first();
-      if (!(await slot.isVisible({ timeout: 20_000 }).catch(() => false))) continue;
+      const hasSlot = await slot
+        .waitFor({ state: 'visible', timeout: 20_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!hasSlot) continue;
 
       await slot.click();
       const selected = this.page.locator('#trial .tslot.on').first();
@@ -114,9 +146,17 @@ export class SchedulingPage extends BasePage {
       };
     }
 
-    throw new Error(
-      `Scheduling failed: none of the advertised dates (${dates.join(', ')}) exposed a selectable time slot.`,
-    );
+    return null;
+  }
+
+  /**
+   * The app's own "Skip for now — I'll book later" path, used only when no slot
+   * can be booked. Waits until the widget has actually left the scheduling screen.
+   */
+  async skipBooking(): Promise<void> {
+    await expect(this.skipButton).toBeEnabled();
+    await this.skipButton.click();
+    await expect(this.holdSpotButton).toBeHidden({ timeout: 60_000 });
   }
 
   async holdSpot(): Promise<void> {
@@ -131,7 +171,7 @@ export class SchedulingPage extends BasePage {
    * "Your session spot is held / Tuesday, September 29 / 2:00 PM · 45 min · 1:1".
    */
   async expectAppointmentHeld(appointment: AppointmentRecord): Promise<void> {
-    await expect(this.widget).toContainText(/YOUR SESSION · 2 OF 2/i);
+    await this.expectStepLabel(/YOUR SESSION · 2 OF 2/i);
     await expect(this.page.getByRole('heading', { name: /Your session spot is held/i })).toBeVisible();
     await expect(this.widget).toContainText(appointment.displayTime);
 

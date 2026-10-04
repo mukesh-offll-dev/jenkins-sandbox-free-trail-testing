@@ -71,6 +71,30 @@ export function redact(text: string): string {
   return output;
 }
 
+/**
+ * redact() plus generic credential patterns. Use for any text that leaves this
+ * machine (AI provider, email), where an unknown secret must not slip through.
+ */
+export function redactStrict(text: string): string {
+  let output = redact(text);
+
+  for (const name of ['OLLAMA_API_KEY', 'SMTP_PASSWORD']) {
+    const value = process.env[name]?.trim();
+    if (value && value.length >= 6) output = output.split(value).join(`***${name}***`);
+  }
+
+  return output
+    .replace(/\b((?:proxy-)?authorization)\s*[:=]\s*[^\r\n,;]+/gi, '$1: ***REDACTED***')
+    .replace(/\b(set-cookie|cookie)\s*[:=]\s*[^\r\n]+/gi, '$1: ***REDACTED***')
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer ***REDACTED***')
+    .replace(/\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}/g, '***JWT***')
+    .replace(
+      /\b(password|passwd|pwd|otp|cvc|cvv|api[_-]?key|access[_-]?token|token|secret)(["']?\s*[:=]\s*["']?)[^\s"'&,;]+/gi,
+      '$1$2***REDACTED***',
+    )
+    .replace(/\b(?:\d[ -]?){13,19}\b/g, '***CARD***');
+}
+
 /** Console logger that redacts secrets before anything reaches the Jenkins log. */
 export function safeLog(message: string): void {
   // eslint-disable-next-line no-console

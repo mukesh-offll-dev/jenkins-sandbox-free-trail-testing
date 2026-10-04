@@ -16,7 +16,8 @@ import { maskPhone } from '../src/utils/mask';
 
 assertSandboxOnly();
 
-const data = buildRegistrationTestData();
+// Preview only: not reserved, so the real test run can still take this address.
+const data = buildRegistrationTestData({ reserveEmail: false });
 const { registration, studentsPage } = urls();
 
 const plan = {
@@ -30,7 +31,7 @@ const plan = {
   environment: { registration, studentsPage },
   parent: {
     email: data.generatedEmail.email,
-    generatedAtIst: data.generatedEmail.generatedAtIst,
+    generatedAtLocal: data.generatedEmail.generatedAtLocal,
     stamp: data.generatedEmail.stamp,
     collisionSuffix: data.generatedEmail.suffix || null,
     name: `${data.parent.firstName} ${data.parent.lastName}`,
@@ -51,7 +52,7 @@ fs.writeFileSync(outFile, JSON.stringify(plan, null, 2), 'utf8');
 
 console.log('--- planned registration data (no secrets) ---');
 console.log(`  parent email : ${plan.parent.email}`);
-console.log(`  generated at : ${plan.parent.generatedAtIst}`);
+console.log(`  generated at : ${plan.parent.generatedAtLocal}`);
 console.log(`  parent       : ${plan.parent.name} / ${plan.parent.country} / ${plan.parent.phoneMasked}`);
 console.log(`  student      : ${plan.student.expectedDisplayName} (grade ${plan.student.grade})`);
 console.log(`  target       : ${studentsPage}`);
@@ -59,6 +60,6 @@ console.log(`  written to   : ${outFile}`);
 
 /**
  * NOTE: the email printed here is a preview generated from the same utility the
- * test uses. The test regenerates it at runtime (a few seconds later), so the
- * seconds component may differ - uniqueness is guaranteed either way.
+ * test uses. The test regenerates it at runtime, so the minute (or a collision
+ * suffix) may differ - uniqueness is guaranteed by the email ledger either way.
  */

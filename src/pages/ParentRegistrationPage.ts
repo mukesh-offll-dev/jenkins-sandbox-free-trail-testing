@@ -49,7 +49,7 @@ import { ParentData } from '../utils/testData';
 
   /** YOUR DETAILS · 2 OF 3 - "Share your details". */
   async expectLoaded(): Promise<void> {
-    await expect(this.widget).toContainText(/YOUR DETAILS · 2 OF 3/i);
+    await this.expectStepLabel(/YOUR DETAILS · 2 OF 3/i);
     await expect(this.page.getByRole('heading', { name: /Share your details/i })).toBeVisible();
     await expect(this.continueButton).toBeDisabled();
   }

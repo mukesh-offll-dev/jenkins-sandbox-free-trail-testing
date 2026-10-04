@@ -34,7 +34,7 @@ export interface RunMetadata {
   };
   parent: {
     email: string;
-    emailGeneratedAtIst: string;
+    emailGeneratedAtLocal: string;
     firstName: string;
     lastName: string;
     country: string;
@@ -55,6 +55,8 @@ export interface RunMetadata {
     outcome: string;
   };
   steps: Array<{ name: string; at: string; detail?: string }>;
+  /** Non-fatal conditions the run worked around (e.g. a skipped booking). */
+  warnings: string[];
   finalUrl?: string;
   failure?: string;
 }
@@ -78,7 +80,7 @@ export class RunReport {
       },
       parent: {
         email: data.generatedEmail.email,
-        emailGeneratedAtIst: data.generatedEmail.generatedAtIst,
+        emailGeneratedAtLocal: data.generatedEmail.generatedAtLocal,
         firstName: data.parent.firstName,
         lastName: data.parent.lastName,
         country: data.parent.country,
@@ -91,7 +93,12 @@ export class RunReport {
         expectedDisplayName: data.expectedStudentDisplayName,
       },
       steps: [],
+      warnings: [],
     };
+  }
+
+  warn(message: string): void {
+    this.metadata.warnings.push(redact(message));
   }
 
   /** Record a completed workflow step. */

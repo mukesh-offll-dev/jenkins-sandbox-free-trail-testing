@@ -1,6 +1,7 @@
 import { test as base, expect, BrowserContext, Page } from '@playwright/test';
 import * as path from 'path';
 import { PROFILE_DIR } from '../src/utils/recaptchaState';
+import { attachBrowserEvents, captureBrowserEvents } from '../src/utils/browserEvents';
 
 /**
  * Custom `context` / `page` fixtures backed by a PERSISTENT Chromium profile.
@@ -73,8 +74,11 @@ export const test = base.extend<{ context: BrowserContext; page: Page }>({
     }
 
     await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+    const browserEvents = captureBrowserEvents(context);
 
     await use(context);
+
+    await attachBrowserEvents(testInfo, browserEvents).catch(() => undefined);
 
     // Preserve the trace when the test did not pass, mirroring Playwright's
     // built-in `trace: 'on-first-retry'`/failure behaviour.

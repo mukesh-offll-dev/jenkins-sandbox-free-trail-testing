@@ -1,5 +1,6 @@
 import { expect, Page } from '@playwright/test';
 import { BasePage } from './BasePage';
+import { assertTestEmail } from '../utils/email';
 
 /**
  * Homepage + free-trial signup entry point.
@@ -138,7 +139,7 @@ export class HomePage extends BasePage {
   /** The signup widget must be present and advertise step 1 of 8. */
   async expectLoaded(): Promise<void> {
     await expect(this.widget).toBeVisible();
-    await expect(this.widget).toContainText(/GET STARTED · 1 OF 8/i);
+    await this.expectStepLabel(/GET STARTED · 1 OF 8/i);
     await expect(this.page.getByRole('heading', { name: /Your risk-free trial includes/i })).toBeVisible();
   }
 
@@ -148,6 +149,7 @@ export class HomePage extends BasePage {
   }
 
   async enterParentEmail(email: string): Promise<void> {
+    assertTestEmail(email);
     await this.emailField.fill(email);
     await expect(this.emailField).toHaveValue(email);
   }

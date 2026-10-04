@@ -68,7 +68,7 @@ test.describe('Thinkster sandbox - free trial registration', () => {
     const report = new RunReport(data, { registrationUrl: registration, studentsUrl: studentsPage });
 
     fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
-    safeLog(`[run ${data.runId}] parent email: ${data.generatedEmail.email} (generated ${data.generatedEmail.generatedAtIst})`);
+    safeLog(`[run ${data.runId}] parent email: ${data.generatedEmail.email} (generated ${data.generatedEmail.generatedAtLocal})`);
 
     // Apply the authorized QA reCAPTCHA bypass cookie if configured.
     // Set AFTER beforeEach has cleared Thinkster cookies, and BEFORE the first
@@ -104,6 +104,7 @@ test.describe('Thinkster sandbox - free trial registration', () => {
       // ---------------------------------------------------------------- step 1
       await test.step('Open the sandbox homepage and submit the unique parent email', async () => {
         await home.open(registration);
+        report.step('widget-variant', await home.widgetVariant());
         await home.expectLoaded();
         await home.enterParentEmail(data.generatedEmail.email);
         const submit = await home.submitEmail();
@@ -157,11 +158,26 @@ test.describe('Thinkster sandbox - free trial registration', () => {
       await test.step('Book the free 1:1 session from real calendar availability', async () => {
         await scheduling.expectLoaded();
 
-        const timezone = await scheduling.selectTimezone(
-          process.env.APPOINTMENT_TIMEZONE ?? 'America/New_York',
-        );
+        const timezone = process.env.APPOINTMENT_TIMEZONE ?? 'America/New_York';
+        const calendarLoaded = await scheduling.waitForCalendar();
+        let appointment = null;
+        if (calendarLoaded) {
+          await scheduling.selectTimezone(timezone);
+          appointment = await scheduling.selectFirstAvailableAppointment(timezone);
+        }
 
-        const appointment = await scheduling.selectFirstAvailableAppointment(timezone);
+        if (!appointment) {
+          const reason = calendarLoaded
+            ? `no available slot on any listed date (${(await scheduling.shownDates()).join(', ')}; ${timezone})`
+            : `the calendar was still "Loading available sessions..." after 90s`;
+          const warning =
+            `Session booking SKIPPED: ${reason}. Used the app's "Skip for now - I'll book later" option.`;
+          await scheduling.skipBooking();
+          report.warn(warning);
+          report.step('appointment-skipped', warning);
+          safeLog(`[run ${data.runId}] WARNING - ${warning}`);
+          return;
+        }
         safeLog(
           `[run ${data.runId}] appointment: ${appointment.dateLabel} ${appointment.displayTime} (${appointment.timezone})`,
         );

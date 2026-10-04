@@ -22,6 +22,32 @@ export abstract class BasePage {
   }
 
   /**
+   * Assert the numbered step header, but only in widget variants that render one.
+   *
+   * VERIFIED 2026-10-04 (widget v1.0.13): variants B and C replaced headers such
+   * as "GET STARTED · 1 OF 8" with unnumbered ones ("LET'S SET THINGS UP"); every
+   * CTA id, heading and question is unchanged. Each caller pairs this with a
+   * screen-specific heading/CTA assertion, so screen identity is still proven.
+   */
+  protected async expectStepLabel(label: RegExp): Promise<void> {
+    const text = await this.widget.innerText();
+    if (/·\s*\d+\s+OF\s+\d+/i.test(text)) {
+      await expect(this.widget).toContainText(label);
+    }
+  }
+
+  /** Widget build and A/B variant, e.g. "v1.0.13 · C / widget-experiment-c". */
+  async widgetVariant(): Promise<string> {
+    return this.widget
+      .evaluate((el) => {
+        const version = (el as HTMLElement).innerText.match(/v\d+\.\d+\.\d+\s*·\s*\w+/)?.[0] ?? 'unknown version';
+        const experiment = el.className.match(/widget-experiment-\w+/)?.[0] ?? 'no experiment class';
+        return `${version} / ${experiment}`;
+      })
+      .catch(() => 'unknown');
+  }
+
+  /**
    * Wait for a screen to be interactive.
    *
    * Relies only on Playwright auto-waiting - no arbitrary sleeps.

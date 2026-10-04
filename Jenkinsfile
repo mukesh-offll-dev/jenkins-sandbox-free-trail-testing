@@ -73,6 +73,12 @@ pipeline {
             defaultValue: true,
             description: 'Record video on failure (needs the Playwright ffmpeg binary on the agent).'
         )
+        // Scheduled builds use this default, so set your recipients here.
+        string(
+            name: 'MAIL_TO',
+            defaultValue: 'mukesh@hellothinkster.com',
+            description: 'Comma-separated recipients of the AI execution report email. Empty = no email.'
+        )
     }
 
     environment {
@@ -160,8 +166,20 @@ pipeline {
         PLAYWRIGHT_BROWSERS_PATH = "${env.LOCALAPPDATA ? env.LOCALAPPDATA + '\\ms-playwright' : 'C:\\ms-playwright'}"
         // The default 30s connection timeout is short for a throttled agent link.
         PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT = '120000'
-        // Jenkins provides BUILD_NUMBER / EXECUTOR_NUMBER, which the suite uses
-        // to guarantee a collision-free parent email per build.
+        // Jenkins provides BUILD_NUMBER, which the suite appends to the parent
+        // email (test<DDMMHHmm>_<BUILD>) so it never collides with a local run.
+
+        // ---- AI execution report + email (post-build, non-secret) -----------
+        // Secrets are bound only inside the post step: OLLAMA_API_KEY from
+        // 'ollama-cloud-api-key' (Secret text), SMTP_USER/SMTP_PASSWORD from
+        // 'qa-report-smtp' (Username with password; for Gmail use an App Password).
+        SEND_EMAIL        = 'true'
+        OLLAMA_BASE_URL   = 'https://ollama.com'
+        OLLAMA_MODEL      = 'gemma4:31b'
+        OLLAMA_TIMEOUT_MS = '120000'
+        SMTP_HOST         = 'smtp.gmail.com'
+        SMTP_PORT         = '587'
+        SMTP_SECURE       = 'false'
     }
 
     stages {
@@ -253,8 +271,8 @@ pipeline {
         stage('Generate unique test data') {
             steps {
                 // Requirement 4: a brand-new parent email for THIS build,
-                // test<DDMMHHmmSS>@tabtortest.com stamped in Asia/Kolkata and
-                // suffixed b<BUILD>e<EXECUTOR> so agents can never collide.
+                // test<DDMMHHmm>_<BUILD>@tabtortest.com in the agent's local time.
+                // Preview only: the test generates and reserves its own address.
                 bat 'npm run generate:test-data'
             }
         }
@@ -291,6 +309,32 @@ pipeline {
         always {
             // Requirement 6: publish JUnit results for Jenkins trend reporting.
             junit testResults: 'test-results/junit/results.xml', allowEmptyResults: true
+
+            // AI execution report + email, for EVERY result. Must never change the
+            // build result: report:ai always exits 0, and anything else (missing
+            // credential, missing node_modules, timeout) is caught and logged here.
+            // Catches Throwable for the same NoSuchMethodError reason as publishHTML below.
+            script {
+                try {
+                    timeout(time: 5, unit: 'MINUTES') {
+                        withCredentials([
+                            string(credentialsId: 'ollama-cloud-api-key', variable: 'OLLAMA_API_KEY'),
+                            usernamePassword(credentialsId: 'qa-report-smtp', usernameVariable: 'SMTP_USER', passwordVariable: 'SMTP_PASSWORD')
+                        ]) {
+                            withEnv([
+                                "PIPELINE_RESULT=${currentBuild.currentResult}",
+                                "BUILD_START_MS=${currentBuild.startTimeInMillis}"
+                            ]) {
+                                bat 'npm run report:ai'
+                            }
+                        }
+                    }
+                } catch (Throwable e) {
+                    // Plain interpolation only: getClass() needs script approval in the
+                    // Groovy sandbox and would throw from inside this catch.
+                    echo "AI email report skipped: ${e}. Build result is unchanged."
+                }
+            }
 
             // Requirement 7: archive the safe HTML report and debug artifacts.
             // artifacts/ holds the success screenshot and the redacted,

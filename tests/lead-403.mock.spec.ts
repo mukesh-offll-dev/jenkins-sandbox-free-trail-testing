@@ -7,6 +7,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { HomePage } from '../src/pages/HomePage';
+import { generateParentEmail } from '../src/utils/email';
 
 const ORIGIN = 'https://sandbox.mock.test';
 
@@ -54,7 +55,8 @@ test('a reCAPTCHA 403 aborts after a single attempt', async ({ page }) => {
 
   const home = new HomePage(page);
   await home.open(ORIGIN);
-  await home.enterParentEmail('mock@tabtortest.com');
+  // Fully mocked (no live request), so the address is generated but not reserved.
+  await home.enterParentEmail(generateParentEmail({ reserve: false }).email);
 
   await expect(home.submitEmail()).rejects.toThrow(/NON-RETRYABLE/i);
 

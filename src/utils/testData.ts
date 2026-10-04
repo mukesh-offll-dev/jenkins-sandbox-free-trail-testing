@@ -5,7 +5,7 @@
  * Values match the authorized sandbox data set in the QA brief.
  */
 
-import { ciCollisionSuffix, generateParentEmail, GeneratedEmail } from './email';
+import { generateParentEmail, GeneratedEmail } from './email';
 
 export interface ParentData {
   firstName: string;
@@ -43,8 +43,9 @@ export interface RegistrationTestData {
 
 const PARENT_PHONE = '(908) 020-4336';
 
-export function buildRegistrationTestData(): RegistrationTestData {
-  const generatedEmail = generateParentEmail({ uniqueSuffix: ciCollisionSuffix() });
+/** `reserveEmail: false` only for previews that never submit the address. */
+export function buildRegistrationTestData(options: { reserveEmail?: boolean } = {}): RegistrationTestData {
+  const generatedEmail = generateParentEmail({ reserve: options.reserveEmail ?? true });
 
   const parent: ParentData = {
     firstName: process.env.PARENT_FIRST_NAME ?? 'Test',
@@ -68,7 +69,7 @@ export function buildRegistrationTestData(): RegistrationTestData {
   };
 
   return {
-    runId: `${generatedEmail.stamp}${generatedEmail.suffix}`,
+    runId: generatedEmail.suffix ? `${generatedEmail.stamp}_${generatedEmail.suffix}` : generatedEmail.stamp,
     generatedEmail,
     parent,
     student,

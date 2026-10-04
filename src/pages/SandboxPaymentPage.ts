@@ -34,7 +34,10 @@ export class SandboxPaymentPage extends BasePage {
   private readonly giftContinue = this.page.locator('#twCtaGift');
   private readonly planContinue = this.page.locator('#twCtaAActivate');
   private readonly checkoutFrameElement = this.page.locator('#twHostedCheckoutFrame');
-  private readonly successCta = this.page.locator('#twCtaAThanks');
+  // Per-variant id: A = #twCtaAThanks "Start your child's math journey",
+  // B = #twCtaBThanks "Start Exploring Thinkster Trial Now" (verified 2026-10-04).
+  private readonly successCta = this.page.locator('#trial button[id^="twCta"][id$="Thanks"]').first();
+  private static readonly ACTIVATED = /TRIAL (IS )?ACTIVATED/i;
 
   /**
    * The no-card variant's hand-off CTA, verified in Jenkins build #64 retry1:
@@ -123,7 +126,7 @@ export class SandboxPaymentPage extends BasePage {
    * from becoming a silent "skip payment" path.
    */
   async expectActivatedWithoutCard(): Promise<string> {
-    await expect(this.widget).toContainText(/TRIAL ACTIVATED/i);
+    await expect(this.widget).toContainText(SandboxPaymentPage.ACTIVATED);
     await expect(this.page.getByRole('heading', { name: /Welcome to Thinkster/i })).toBeVisible();
     await expect(this.elevateAppCta).toBeEnabled();
 
@@ -145,14 +148,14 @@ export class SandboxPaymentPage extends BasePage {
     // network-settled; 15s is sufficient and surfaces arm-switch regressions
     // quickly rather than hanging for 2 minutes.
     await this.expectVisible(this.giftContinue, 15_000);
-    await expect(this.widget).toContainText(/ACTIVATE TRIAL · 1 OF 3/i);
+    await this.expectStepLabel(/ACTIVATE TRIAL · 1 OF 3/i);
     await this.giftContinue.click();
     await this.expectVisible(this.planContinue, 90_000);
   }
 
   /** ACTIVATE TRIAL · 2 OF 3 - accept the pre-selected (most popular) plan. */
   async acceptDefaultPlan(): Promise<string> {
-    await expect(this.widget).toContainText(/ACTIVATE TRIAL · 2 OF 3/i);
+    await this.expectStepLabel(/ACTIVATE TRIAL · 2 OF 3/i);
     await expect(this.page.getByRole('heading', { name: /Activate your trial/i })).toBeVisible();
     await expect(this.widget).toContainText(/\$0 due today/i);
 
@@ -166,7 +169,7 @@ export class SandboxPaymentPage extends BasePage {
    * authorized sandbox payment environment before any card data is typed.
    */
   async expectSandboxCheckoutLoaded(expectedHost: string): Promise<string> {
-    await expect(this.widget).toContainText(/ACTIVATE TRIAL · 3 OF 3/i);
+    await this.expectStepLabel(/ACTIVATE TRIAL · 3 OF 3/i);
     await this.expectVisible(this.checkoutFrameElement, 120_000);
 
     const src = await this.checkoutFrameElement.getAttribute('src');
@@ -235,8 +238,12 @@ export class SandboxPaymentPage extends BasePage {
     const deadline = Date.now() + 5 * 60 * 1000;
     while (Date.now() < deadline) {
       if (await success.isVisible().catch(() => false)) {
-        await expect(this.widget).toContainText(/TRIAL ACTIVATED/i);
-        await expect(this.widget).toContainText(/\$0 charged today/i);
+        await expect(this.widget).toContainText(SandboxPaymentPage.ACTIVATED);
+        // Variant A states "$0 charged today"; variant B omits charge wording.
+        // Whenever a charge is mentioned it must be $0.
+        if (/charged/i.test(await this.widget.innerText())) {
+          await expect(this.widget).toContainText(/\$0 charged today/i);
+        }
         return 'TRIAL ACTIVATED';
       }
 

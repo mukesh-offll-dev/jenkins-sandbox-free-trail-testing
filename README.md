@@ -55,7 +55,7 @@ thinkster-qa-automation/
 │  │  ├─ SandboxPaymentPage.ts       gift, plan, nested-iframe hosted checkout
 │  │  └─ StudentSelectionPage.ts     final assertions on the Elevate app
 │  └─ utils/
-│     ├─ email.ts                unique parent email (DDMMHHmmSS, Asia/Kolkata)
+│     ├─ email.ts                unique parent email (DDMMHHmm, local time)
 │     ├─ testData.ts             test-data management
 │     ├─ env.ts                  configuration, secrets, sandbox-only guard
 │     ├─ mask.ts                 secret redaction for logs and artifacts
@@ -98,9 +98,11 @@ npm run clean               # remove reports/artifacts
 ```
 
 Each execution registers a **brand-new parent**:
-`test<DDMMHHmmSS>@tabtortest.com`, stamped in **Asia/Kolkata**
-(e.g. `test2809120423@tabtortest.com`). In CI a `b<BUILD>e<EXECUTOR>` suffix is appended
-so concurrent agents can never collide. An email is never reused.
+`test<DDMMHHmm>@tabtortest.com`, stamped in the **local time** of the machine running
+the test (e.g. `test29090201@tabtortest.com`). Every used address is recorded in
+`.auth/used-test-emails.txt`; when the base address is taken, `_2`, `_3`, ... is appended.
+Jenkins runs always append `_<BUILD_NUMBER>`. An email is never reused, and the signup
+form refuses any address outside this pattern.
 
 ## Reports, evidence and debugging
 

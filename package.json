@@ -21,6 +21,9 @@
     "diagnose:email": "tsx scripts/diagnose-email-step.ts",
     "diagnose:403": "tsx scripts/verify-403-guard.ts",
     "diagnose:cookie": "tsx scripts/probe-cookie.ts",
+    "report:ai": "tsx scripts/ai-report.ts",
+    "report:test": "tsx scripts/report-selftest.ts",
+    "test:registration:report": "tsx scripts/run-with-report.ts",
     "clean": "node -e \"const fs=require('fs');['playwright-report','test-results','artifacts'].forEach(d=>fs.rmSync(d,{recursive:true,force:true}))\""
   },
   "devDependencies": {
@@ -29,6 +32,8 @@
     "dotenv": "^16.4.7",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "nodemailer": "^10.0.14"
   }
 }
-
