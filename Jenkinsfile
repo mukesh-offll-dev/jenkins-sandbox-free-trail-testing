@@ -73,11 +73,10 @@ pipeline {
             defaultValue: true,
             description: 'Record video on failure (needs the Playwright ffmpeg binary on the agent).'
         )
-        // Scheduled builds use this default, so set your recipients here.
         string(
             name: 'MAIL_TO',
-            defaultValue: 'mukesh@hellothinkster.com',
-            description: 'Comma-separated recipients of the AI execution report email. Empty = no email.'
+            defaultValue: '',
+            description: 'Comma-separated report recipients for THIS build. Empty = QA_REPORT_MAIL_TO.'
         )
     }
 
@@ -180,6 +179,9 @@ pipeline {
         SMTP_HOST         = 'smtp.gmail.com'
         SMTP_PORT         = '587'
         SMTP_SECURE       = 'false'
+        // Default report recipients (comma-separated). Used for scheduled builds
+        // and whenever the MAIL_TO parameter is empty or not yet registered.
+        QA_REPORT_MAIL_TO = 'mukesh@hellothinkster.com'
     }
 
     stages {
@@ -323,7 +325,10 @@ pipeline {
                         ]) {
                             withEnv([
                                 "PIPELINE_RESULT=${currentBuild.currentResult}",
-                                "BUILD_START_MS=${currentBuild.startTimeInMillis}"
+                                "BUILD_START_MS=${currentBuild.startTimeInMillis}",
+                                // Set explicitly: a newly added parameter is not exported as an
+                                // env var until Jenkins has registered it on a previous build.
+                                "MAIL_TO=${params.MAIL_TO?.trim() ?: env.QA_REPORT_MAIL_TO}"
                             ]) {
                                 bat 'npm run report:ai'
                             }
