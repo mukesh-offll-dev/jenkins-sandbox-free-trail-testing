@@ -15,6 +15,16 @@ export abstract class BasePage {
     this.widget = page.locator('#trial');
   }
 
+  /**
+   * The widget's "‹ Back" link: a <div id="twBack"> with no role (verified
+   * 2026-10-05), so it is located by its stable id. Clicks during a screen
+   * transition are ignored, so this waits for the previous screen to appear.
+   */
+  async goBack(previousScreen: Locator): Promise<void> {
+    await this.page.locator('#twBack').click();
+    await expect(previousScreen).toBeVisible({ timeout: 15_000 });
+  }
+
   /** The widget's step label, e.g. "YOUR DETAILS · 2 OF 3". */
   async stepLabel(): Promise<string> {
     const text = await this.widget.innerText();

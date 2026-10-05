@@ -20,6 +20,8 @@ export interface TestOutcome {
   durationMs: number;
   failedStep?: string;
   error?: string;
+  /** PNG screenshots Playwright/the spec attached to a test that did not pass. */
+  screenshots: string[];
 }
 
 export interface ExecutionReport {
@@ -41,7 +43,8 @@ export interface ExecutionReport {
     runId: string;
     status: string;
     durationMs?: number;
-    lastCompletedStep?: string;
+    /** Steps recorded by the spec, in order (registration.spec.ts report.step names). */
+    completedSteps: Array<{ name: string; detail?: string }>;
     activationArm?: string;
     widgetVariant?: string;
     appointment?: string;
@@ -49,24 +52,21 @@ export interface ExecutionReport {
     finalUrl?: string;
     failure?: string;
   };
-  stdoutTail: string[];
 }
 
 export const DEFAULT_RESULTS_FILE = path.resolve(process.cwd(), 'test-results', 'json', 'results.json');
 
 const MAX_ERROR_CHARS = 1500;
-const STDOUT_TAIL_LINES = 15;
 
 // Minimal shape of Playwright's JSON reporter output that this module reads.
 interface JsonStep { title: string; error?: unknown; steps?: JsonStep[] }
-interface JsonAttachment { name: string; path?: string }
+interface JsonAttachment { name: string; path?: string; contentType?: string }
 interface JsonResult {
   status: string;
   duration: number;
   error?: { message?: string };
   errors?: Array<{ message?: string }>;
   steps?: JsonStep[];
-  stdout?: Array<{ text?: string }>;
   attachments?: JsonAttachment[];
 }
 interface JsonSpec { title: string; file: string; tests: Array<{ results: JsonResult[] }> }
@@ -91,6 +91,16 @@ function collectSpecs(suites: JsonSuite[] = []): JsonSpec[] {
 
 function firstFailedStep(steps: JsonStep[] = []): string | undefined {
   return steps.find((step) => step.error)?.title;
+}
+
+/** Existing PNGs attached to a failed result (Playwright's own + the spec's failure-page-N), max 3. */
+function failureScreenshots(attachments: JsonAttachment[] = []): string[] {
+  const files = attachments
+    .filter((a) => a.path && (a.contentType === 'image/png' || a.path.toLowerCase().endsWith('.png')))
+    .filter((a) => a.name !== 'final-students-page')
+    .map((a) => a.path as string)
+    .filter((file) => fs.existsSync(file));
+  return [...new Set(files)].slice(0, 3);
 }
 
 function git(args: string[]): string | undefined {
@@ -124,7 +134,7 @@ function summarizeRun(meta: RunMetadata): NonNullable<ExecutionReport['run']> {
     runId: meta.runId,
     status: meta.status,
     durationMs: meta.durationMs,
-    lastCompletedStep: steps[steps.length - 1]?.name,
+    completedSteps: steps.map((s) => ({ name: s.name, detail: s.detail ? clean(s.detail, 200) : undefined })),
     activationArm: steps.find((s) => s.name === 'activation-arm-detected')?.detail,
     widgetVariant: steps.find((s) => s.name === 'widget-variant')?.detail,
     warnings: (meta.warnings ?? []).map((w) => clean(w, 500)),
@@ -172,7 +182,6 @@ export function collectExecutionReport(options: CollectOptions = {}): ExecutionR
     pageErrors: [],
     failedRequests: [],
     applicationErrors: [],
-    stdoutTail: [],
   };
 
   const json = readJson<JsonReport>(options.resultsFile ?? DEFAULT_RESULTS_FILE);
@@ -193,6 +202,7 @@ export function collectExecutionReport(options: CollectOptions = {}): ExecutionR
         if (!result) continue;
 
         const message = result.error?.message ?? result.errors?.find((e) => e.message)?.message;
+        const passed = result.status === 'passed' || result.status === 'skipped';
         report.tests.push({
           file: spec.file,
           title: spec.title,
@@ -200,12 +210,8 @@ export function collectExecutionReport(options: CollectOptions = {}): ExecutionR
           durationMs: Math.round(result.duration),
           failedStep: firstFailedStep(result.steps),
           error: message ? clean(message) : undefined,
+          screenshots: passed ? [] : failureScreenshots(result.attachments),
         });
-
-        // Keep the suite's own "[run <id>] ..." log lines; multi-line error
-        // continuations are already captured as the test error above.
-        const stdout = (result.stdout ?? []).flatMap((chunk) => (chunk.text ?? '').split(/\r?\n/));
-        report.stdoutTail.push(...stdout.map((line) => clean(line, 400)).filter((line) => line.startsWith('[')));
 
         for (const attachment of result.attachments ?? []) {
           if (attachment.name === BROWSER_EVENTS_ATTACHMENT) {
@@ -226,7 +232,14 @@ export function collectExecutionReport(options: CollectOptions = {}): ExecutionR
 
     for (const error of json.errors ?? []) {
       if (error.message) {
-        report.tests.push({ file: '(global)', title: 'Playwright setup', status: 'failed', durationMs: 0, error: clean(error.message) });
+        report.tests.push({
+          file: '(global)',
+          title: 'Playwright setup',
+          status: 'failed',
+          durationMs: 0,
+          error: clean(error.message),
+          screenshots: [],
+        });
       }
     }
 
@@ -235,7 +248,6 @@ export function collectExecutionReport(options: CollectOptions = {}): ExecutionR
     report.consoleWarnings = unique(events.consoleWarnings);
     report.pageErrors = unique(events.pageErrors);
     report.failedRequests = unique(events.failedRequests);
-    report.stdoutTail = report.stdoutTail.slice(-STDOUT_TAIL_LINES);
 
     // The registration spec appends visible widget errors to its failure detail.
     const appErrors = report.run?.failure?.split('| visible app errors:')[1];

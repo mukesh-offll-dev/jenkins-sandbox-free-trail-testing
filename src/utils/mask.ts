@@ -73,12 +73,12 @@ export function redact(text: string): string {
 
 /**
  * redact() plus generic credential patterns. Use for any text that leaves this
- * machine (AI provider, email), where an unknown secret must not slip through.
+ * machine (the report email), where an unknown secret must not slip through.
  */
 export function redactStrict(text: string): string {
   let output = redact(text);
 
-  for (const name of ['OLLAMA_API_KEY', 'SMTP_PASSWORD']) {
+  for (const name of ['SMTP_PASSWORD']) {
     const value = process.env[name]?.trim();
     if (value && value.length >= 6) output = output.split(value).join(`***${name}***`);
   }

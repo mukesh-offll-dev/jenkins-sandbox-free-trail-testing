@@ -140,7 +140,9 @@ export class HomePage extends BasePage {
   async expectLoaded(): Promise<void> {
     await expect(this.widget).toBeVisible();
     await this.expectStepLabel(/GET STARTED · 1 OF 8/i);
-    await expect(this.page.getByRole('heading', { name: /Your risk-free trial includes/i })).toBeVisible();
+    // Copy varies: "Your risk-free trial includes" and, from 2026-10-05,
+    // "Your 3 day, no credit card, risk-free trial includes".
+    await expect(this.page.getByRole('heading', { name: /Your\b.*risk-free trial includes/i })).toBeVisible();
   }
 
   /** The CTA is disabled until a syntactically valid address is entered. */

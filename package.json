@@ -6,6 +6,8 @@
   "scripts": {
     "test": "playwright test",
     "test:registration": "playwright test tests/registration.spec.ts",
+    "test:onboarding": "playwright test tests/onboarding.spec.ts",
+    "test:ci": "playwright test tests/activation-arm.mock.spec.ts tests/onboarding.spec.ts tests/registration.spec.ts",
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
     "test:ui": "playwright test --ui",
@@ -21,7 +23,7 @@
     "diagnose:email": "tsx scripts/diagnose-email-step.ts",
     "diagnose:403": "tsx scripts/verify-403-guard.ts",
     "diagnose:cookie": "tsx scripts/probe-cookie.ts",
-    "report:ai": "tsx scripts/ai-report.ts",
+    "report:email": "tsx scripts/email-report.ts",
     "report:test": "tsx scripts/report-selftest.ts",
     "test:registration:report": "tsx scripts/run-with-report.ts",
     "clean": "node -e \"const fs=require('fs');['playwright-report','test-results','artifacts'].forEach(d=>fs.rmSync(d,{recursive:true,force:true}))\""

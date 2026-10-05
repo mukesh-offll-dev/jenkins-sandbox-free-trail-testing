@@ -1,4 +1,4 @@
-import { expect, Page } from '@playwright/test';
+import { expect, Locator, Page } from '@playwright/test';
 import { BasePage } from './BasePage';
 import { StudentData } from '../utils/testData';
 
@@ -61,6 +61,136 @@ export class StudentRegistrationPage extends BasePage {
 
     await this.childCountContinue.click();
     await this.expectVisible(this.childNameField);
+  }
+
+  // ---- Interactive coverage (onboarding.spec.ts) ---------------------------
+  //
+  // Verified live 2026-10-05: the count tiles are <div class="countbtn"> holding
+  // "<n>" and "child(ren)" as separate elements (textContent "2children"), so they
+  // are matched by regex; ".sel" marks the choice. Each grade control is a custom
+  // ARIA slider <button role="slider" aria-label="School grade" | "Working grade">
+  // on #axis1 / #axis2 with 12 tick labels (.sp-tlab, data-i 0..11). It responds
+  // to dragging only, and aria-valuenow stays "5" whatever is shown.
+
+  /** Grade tick labels as rendered, K .. AL2. */
+  static readonly GRADE_LABELS = ['K', '1', '2', '3', '4', '5', '6', '7', '8', 'AL1', 'GEM', 'AL2'] as const;
+
+  /** How the school-grade value (#twV1) and the working-screen summary spell each tick. */
+  static gradeText(label: string): string {
+    const names: Record<string, string> = { K: 'Kindergarten', AL1: 'Algebra 1', GEM: 'Geometry', AL2: 'Algebra 2' };
+    return names[label] ?? `Grade ${label}`;
+  }
+
+  private static readonly SAVE_LINES: Record<1 | 2 | 3, RegExp> = {
+    1: /Adding a second child saves 5%/i,
+    2: /save 5% on the second child/i,
+    3: /save 5% on the second and third child/i,
+  };
+
+  readonly childCountScreen = this.childCountContinue;
+  readonly nameGradeScreen = this.childNameField;
+  readonly workingGradeScreen = this.workingGradeHandle;
+  readonly question1Screen = this.question1Continue;
+
+  private countTile(count: 1 | 2 | 3): Locator {
+    return this.childCountOptions.filter({ hasText: new RegExp(`^\\s*${count}\\s*child`) });
+  }
+
+  private slider(kind: 'school' | 'working'): Locator {
+    return this.page.getByRole('slider', { name: kind === 'school' ? 'School grade' : 'Working grade' });
+  }
+
+  private tick(kind: 'school' | 'working', label: string): Locator {
+    return this.page.locator(`#${kind === 'school' ? 'axis1' : 'axis2'} .sp-tlab`).filter({ hasText: new RegExp(`^${label}$`) });
+  }
+
+  /** Select a count, prove only that tile is selected and its savings line shows. */
+  async chooseChildCount(count: 1 | 2 | 3): Promise<void> {
+    await this.expectVisible(this.childCountContinue);
+    await expect(this.widget).toContainText(/How many children/i);
+    await this.countTile(count).click();
+    await this.expectChildCountSelected(count);
+    await expect(this.page.locator('#twSaveLine')).toHaveText(StudentRegistrationPage.SAVE_LINES[count]);
+  }
+
+  async expectChildCountSelected(count: 1 | 2 | 3): Promise<void> {
+    for (const n of [1, 2, 3] as const) {
+      if (n === count) await expect(this.countTile(n)).toHaveClass(/\bsel\b/);
+      else await expect(this.countTile(n)).not.toHaveClass(/\bsel\b/);
+    }
+  }
+
+  async continueFromChildCount(): Promise<void> {
+    await this.childCountContinue.click();
+    await this.expectVisible(this.childNameField);
+    await expect(this.widget).toContainText(/Tell us your child's first name/i);
+  }
+
+  async enterChildName(name: string): Promise<void> {
+    await this.childNameField.fill(name);
+    await expect(this.childNameField).toHaveValue(name);
+  }
+
+  /** Drag the real slider handle onto a tick label and verify what the UI shows. */
+  async dragGrade(kind: 'school' | 'working', label: string): Promise<void> {
+    const handle = this.slider(kind);
+    const tick = this.tick(kind, label);
+    await handle.dragTo(tick);
+    await expect(handle).toHaveText(label);
+    // The handle sits exactly on the chosen tick (both use the same left %).
+    const tickLeft = await tick.evaluate((el) => (el as HTMLElement).style.left);
+    await expect.poll(() => handle.evaluate((el) => (el as HTMLElement).style.left)).toBe(tickLeft);
+    if (kind === 'school') {
+      await expect(this.page.locator('#twV1')).toHaveText(StudentRegistrationPage.gradeText(label));
+    }
+  }
+
+  /**
+   * Drag K -> AL2 through every tick. Returns any ticks where aria-valuenow does
+   * not match the tick index (a known accessibility defect), without failing.
+   */
+  async sweepGrade(kind: 'school' | 'working'): Promise<string[]> {
+    const ariaMismatches: string[] = [];
+    for (const [index, label] of StudentRegistrationPage.GRADE_LABELS.entries()) {
+      await this.dragGrade(kind, label);
+      const now = await this.slider(kind).getAttribute('aria-valuenow');
+      if (now !== String(index)) ariaMismatches.push(`${label}: aria-valuenow=${now} (expected ${index})`);
+    }
+    return ariaMismatches;
+  }
+
+  async continueFromNameGrade(childName: string): Promise<void> {
+    await expect(this.nameGradeContinue).toBeEnabled();
+    await this.nameGradeContinue.click();
+    await this.expectVisible(this.workingGradeHandle);
+    await expect(this.widget).toContainText(new RegExp(`Where is ${childName} actually working today`, 'i'));
+  }
+
+  /** "You told us <name>'s school grade" + "<Grade> · <year> school year". */
+  async expectSchoolGradeSummary(childName: string, label: string): Promise<void> {
+    await expect(this.widget).toContainText(new RegExp(`You told us ${childName}'s school grade`, 'i'));
+    await expect(this.widget).toContainText(new RegExp(`${StudentRegistrationPage.gradeText(label)} · \\d{4}`));
+  }
+
+  /** "Edit" re-opens the name/school-grade screen with the previous answers kept. */
+  async editSchoolGrade(expectedName: string, expectedLabel: string): Promise<void> {
+    await this.page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await this.expectVisible(this.childNameField);
+    await expect(this.childNameField).toHaveValue(expectedName);
+    await expect(this.slider('school')).toHaveText(expectedLabel);
+  }
+
+  async continueFromWorkingGrade(): Promise<void> {
+    await expect(this.workingGradeContinue).toBeEnabled();
+    await this.workingGradeContinue.click();
+    await this.expectVisible(this.question1Continue);
+  }
+
+  /** The question screen proves the chosen count was kept: "CHILD 1 OF <n>". */
+  async expectQuestionsForChildCount(childName: string, count: 1 | 2 | 3): Promise<void> {
+    await expect(this.widget).toContainText(new RegExp(`What's the one thing you want to change for ${childName}`, 'i'));
+    if (count === 1) await expect(this.widget).not.toContainText(/CHILD 1 OF/i);
+    else await expect(this.widget).toContainText(new RegExp(`CHILD 1 OF ${count}`, 'i'));
   }
 
   /** Screen 4 of 8 - child's first name + school grade. */

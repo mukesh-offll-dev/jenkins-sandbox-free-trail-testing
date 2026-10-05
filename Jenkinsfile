@@ -168,14 +168,12 @@ pipeline {
         // Jenkins provides BUILD_NUMBER, which the suite appends to the parent
         // email (test<DDMMHHmm>_<BUILD>) so it never collides with a local run.
 
-        // ---- AI execution report + email (post-build, non-secret) -----------
-        // Secrets are bound only inside the post step: OLLAMA_API_KEY from
-        // 'ollama-cloud-api-key' (Secret text), SMTP_USER/SMTP_PASSWORD from
-        // 'qa-report-smtp' (Username with password; for Gmail use an App Password).
+        // ---- Execution report email (post-build, non-secret) ----------------
+        // SMTP_USER/SMTP_PASSWORD are bound only inside the post step, from the
+        // 'qa-report-smtp' credential (Username with password). It must be the
+        // approved Thinkster company mailbox (@hellothinkster.com); any other
+        // sender is refused. smtp.gmail.com serves Google Workspace mailboxes.
         SEND_EMAIL        = 'true'
-        OLLAMA_BASE_URL   = 'https://ollama.com'
-        OLLAMA_MODEL      = 'gemma4:31b'
-        OLLAMA_TIMEOUT_MS = '120000'
         SMTP_HOST         = 'smtp.gmail.com'
         SMTP_PORT         = '587'
         SMTP_SECURE       = 'false'
@@ -298,11 +296,14 @@ pipeline {
             }
         }
 
-        stage('Run registration test') {
+        stage('Run tests') {
             steps {
-                // Requirement 5 + 8: let the test fail the build, but always
+                // Requirement 5 + 8: let the tests fail the build, but always
                 // continue to the reporting stages so artifacts are published.
-                bat 'npm run test:registration'
+                // test:ci = activation-arm mock (offline), onboarding screens (one
+                // lead, no account) and the full registration journey to Elevate.
+                // Every failure is screenshotted and embedded in the report email.
+                bat 'npm run test:ci'
             }
         }
     }
@@ -312,15 +313,14 @@ pipeline {
             // Requirement 6: publish JUnit results for Jenkins trend reporting.
             junit testResults: 'test-results/junit/results.xml', allowEmptyResults: true
 
-            // AI execution report + email, for EVERY result. Must never change the
-            // build result: report:ai always exits 0, and anything else (missing
+            // Execution report email, for EVERY result. Must never change the
+            // build result: report:email always exits 0, and anything else (missing
             // credential, missing node_modules, timeout) is caught and logged here.
             // Catches Throwable for the same NoSuchMethodError reason as publishHTML below.
             script {
                 try {
                     timeout(time: 5, unit: 'MINUTES') {
                         withCredentials([
-                            string(credentialsId: 'ollama-cloud-api-key', variable: 'OLLAMA_API_KEY'),
                             usernamePassword(credentialsId: 'qa-report-smtp', usernameVariable: 'SMTP_USER', passwordVariable: 'SMTP_PASSWORD')
                         ]) {
                             withEnv([
@@ -330,14 +330,14 @@ pipeline {
                                 // env var until Jenkins has registered it on a previous build.
                                 "MAIL_TO=${params.MAIL_TO?.trim() ?: env.QA_REPORT_MAIL_TO}"
                             ]) {
-                                bat 'npm run report:ai'
+                                bat 'npm run report:email'
                             }
                         }
                     }
                 } catch (Throwable e) {
                     // Plain interpolation only: getClass() needs script approval in the
                     // Groovy sandbox and would throw from inside this catch.
-                    echo "AI email report skipped: ${e}. Build result is unchanged."
+                    echo "Email report skipped: ${e}. Build result is unchanged."
                 }
             }
 

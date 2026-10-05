@@ -100,6 +100,16 @@ test.describe('Thinkster sandbox - free trial registration', () => {
 
     let studentsTab: Page | undefined;
 
+    // Non-blocking problems seen on the way (the journey completing proves none
+    // of them blocked it); reported as run warnings so they reach the email.
+    const flowIssues = new Set<string>();
+    context.on('weberror', (webError) => flowIssues.add(`Page error: ${webError.error().message.slice(0, 160)}`));
+    context.on('response', (response) => {
+      if (/^https:\/\/core-api[^/]*\.hellothinkster\.com\/api\//.test(response.url()) && response.status() >= 400) {
+        flowIssues.add(`Thinkster API ${response.request().method()} ${new URL(response.url()).pathname} -> HTTP ${response.status()}`);
+      }
+    });
+
     try {
       // ---------------------------------------------------------------- step 1
       await test.step('Open the sandbox homepage and submit the unique parent email', async () => {
@@ -260,6 +270,9 @@ test.describe('Thinkster sandbox - free trial registration', () => {
         await selection.expectSelectButtonReady();
         // 6. no unexpected application error
         await selection.expectNoApplicationError();
+        // 7. it really is the Elevate app on the expected host
+        expect(new URL(studentsTab.url()).host).toBe(new URL(studentsPage).host);
+        await expect(studentsTab).toHaveTitle(/\S/);
 
         report.studentObserved(observedName, observedStatus);
 
@@ -270,6 +283,7 @@ test.describe('Thinkster sandbox - free trial registration', () => {
         report.step('final-assertions-passed', `${observedName} / ${observedStatus}`);
       });
 
+      for (const issue of [...flowIssues].slice(0, 5)) report.warn(`Non-blocking during the journey - ${issue}`);
       const metadataFile = report.finish('passed', studentsTab?.url());
       await testInfo.attach('run-metadata', { path: metadataFile, contentType: 'application/json' });
       safeLog(`[run ${data.runId}] PASSED - metadata: ${metadataFile}`);

@@ -40,10 +40,16 @@ export class SandboxPaymentPage extends BasePage {
   private static readonly ACTIVATED = /TRIAL (IS )?ACTIVATED/i;
 
   /**
-   * The no-card variant's hand-off CTA, verified in Jenkins build #64 retry1:
-   *   button "Open the Elevate App →"
+   * The no-card arm's hand-off CTA:
+   *   variant A (Jenkins build #64): button "Open the Elevate App →"
+   *   variant C (verified 2026-10-05): #twCtaCThanks "Start Exploring Thinkster Now →"
+   * A #twCta?Thanks button can only be shown before checkout in the no-card arm;
+   * in the card arm it appears after payment, long after detection has run.
    */
-  private readonly elevateAppCta = this.page.getByRole('button', { name: /Open the Elevate App/i });
+  private readonly elevateAppCta = this.page
+    .getByRole('button', { name: /Open the Elevate App/i })
+    .or(this.successCta)
+    .first();
 
   constructor(page: Page) {
     super(page);
@@ -127,7 +133,8 @@ export class SandboxPaymentPage extends BasePage {
    */
   async expectActivatedWithoutCard(): Promise<string> {
     await expect(this.widget).toContainText(SandboxPaymentPage.ACTIVATED);
-    await expect(this.page.getByRole('heading', { name: /Welcome to Thinkster/i })).toBeVisible();
+    // A heading in variant A, a paragraph under the heading in variant C.
+    await expect(this.widget).toContainText(/Welcome to Thinkster/i);
     await expect(this.elevateAppCta).toBeEnabled();
 
     const text = (await this.widget.innerText()).replace(/\s+/g, ' ').trim();

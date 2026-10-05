@@ -1,24 +1,23 @@
 /**
- * Post-build execution report: collect results -> Ollama Cloud analysis -> email.
+ * Post-build execution report: collect Playwright results -> render -> email.
  *
  * Runs after every Jenkins build (pass or fail). It ALWAYS exits 0 so reporting
  * can never change the real build result; problems are logged and skipped.
  *
  * Inputs (all optional): PIPELINE_RESULT, BUILD_START_MS, RESULTS_FILE, plus the
- * OLLAMA_* / SMTP_* / MAIL_* variables documented in .env.example.
+ * SMTP_* / MAIL_* variables documented in .env.example.
  */
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
 import { collectExecutionReport } from '../src/utils/executionReport';
-import { analyzeWithOllama } from '../src/utils/aiAnalyzer';
 import { renderEmail, sendReportEmail } from '../src/utils/emailReporter';
 import { redactStrict } from '../src/utils/mask';
 
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
-const OUT_DIR = path.resolve(process.cwd(), 'artifacts', 'ai-report');
-const log = (message: string) => console.log(`[ai-report] ${redactStrict(message)}`);
+const OUT_DIR = path.resolve(process.cwd(), 'artifacts', 'email-report');
+const log = (message: string) => console.log(`[email-report] ${redactStrict(message)}`);
 
 async function main(): Promise<void> {
   const buildStartMs = Number(process.env.BUILD_START_MS);
@@ -33,14 +32,11 @@ async function main(): Promise<void> {
       (report.resultsNote ? ` note="${report.resultsNote}"` : ''),
   );
 
-  const ai = await analyzeWithOllama(report);
-  log(ai.available ? `AI analysis complete (model ${ai.model}, category ${ai.analysis.category})` : `AI Analysis: Unavailable - ${ai.reason}`);
-
-  const email = renderEmail(report, ai);
+  const email = renderEmail(report);
+  if (email.attachments.length) log(`failure screenshots embedded: ${email.attachments.length}`);
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(path.join(OUT_DIR, 'execution-report.json'), redactStrict(JSON.stringify(report, null, 2)), 'utf8');
-  fs.writeFileSync(path.join(OUT_DIR, 'ai-analysis.json'), redactStrict(JSON.stringify(ai, null, 2)), 'utf8');
   fs.writeFileSync(path.join(OUT_DIR, 'email.html'), email.html, 'utf8');
   log(`report written to ${OUT_DIR}`);
 
@@ -50,8 +46,7 @@ async function main(): Promise<void> {
       `Email report sent: "${email.subject}" - SMTP accepted ${outcome.accepted}/${outcome.recipients} ` +
         `recipient(s), rejected ${outcome.rejected}; server said: ${outcome.serverResponse}`,
     );
-  }
-  else if (outcome.skipped) log(`Email not sent: ${outcome.reason}`);
+  } else if (outcome.skipped) log(`Email not sent: ${outcome.reason}`);
   else log(`Email reporting failed: ${outcome.reason}`);
 }
 
