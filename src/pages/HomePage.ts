@@ -91,14 +91,17 @@ export class HomePage extends BasePage {
     if (this.leadListenerAttached) return;
     this.leadListenerAttached = true;
     this.page.on('response', async (response) => {
-      if (!/\/api\/register\/lead$/.test(response.url())) return;
-      let body = '';
+      if (!/\/api\/register\/lead$/.test(response.url()) || response.request().method() !== 'POST') return;
+      // Record the status synchronously: if it waited for the body, a banner
+      // could appear first, the 403 would not be visible yet, and submitEmail()
+      // would retry a non-retryable rejection.
+      const entry = { status: response.status(), body: '' };
+      this.leadResponses.push(entry);
       try {
-        body = (await response.text()).slice(0, 200);
+        entry.body = (await response.text()).slice(0, 200);
       } catch {
-        body = '<unreadable>';
+        entry.body = '<unreadable>';
       }
-      this.leadResponses.push({ status: response.status(), body });
     });
   }
 

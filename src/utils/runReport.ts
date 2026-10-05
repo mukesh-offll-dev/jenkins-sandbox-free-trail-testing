@@ -7,7 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { maskPhone, redact } from './mask';
+import { maskPhone, redact, redactedJson } from './mask';
 import { RegistrationTestData } from './testData';
 
 export interface AppointmentRecord {
@@ -137,9 +137,9 @@ export class RunReport {
   write(): string {
     fs.mkdirSync(METADATA_DIR, { recursive: true });
     const file = path.join(METADATA_DIR, `run-${this.metadata.runId}.json`);
-    // redact() over the whole document is a belt-and-braces guarantee that no
-    // secret can reach a published artifact.
-    fs.writeFileSync(file, redact(JSON.stringify(this.metadata, null, 2)), 'utf8');
+    // Every string value is redacted again as a belt-and-braces guarantee that
+    // no secret can reach a published artifact; numbers are left intact.
+    fs.writeFileSync(file, redactedJson(this.metadata), 'utf8');
     return file;
   }
 }

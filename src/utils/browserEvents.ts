@@ -1,7 +1,7 @@
 import type { BrowserContext, TestInfo } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { redact } from './mask';
+import { redactedJson } from './mask';
 
 /**
  * Passive browser-event capture for the post-run execution report.
@@ -62,6 +62,6 @@ export function captureBrowserEvents(context: BrowserContext): BrowserEvents {
 export async function attachBrowserEvents(testInfo: TestInfo, events: BrowserEvents): Promise<void> {
   const file = testInfo.outputPath(`${BROWSER_EVENTS_ATTACHMENT}.json`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, redact(JSON.stringify(events, null, 2)), 'utf8');
+  fs.writeFileSync(file, redactedJson(events), 'utf8');
   await testInfo.attach(BROWSER_EVENTS_ATTACHMENT, { path: file, contentType: 'application/json' });
 }

@@ -48,7 +48,10 @@ export function redact(text: string): string {
 
   for (const [secret, placeholder] of replacements) {
     if (!secret || secret.length < 3) continue;
-    output = output.replace(new RegExp(escapeRegExp(secret), 'g'), placeholder);
+    // All-digit secrets (OTP, CVC, card) must match whole numbers only, or the
+    // CVC "123" would also rewrite unrelated numbers such as 1232 or 2123.
+    const pattern = /^\d+$/.test(secret) ? `(?<!\\d)${secret}(?!\\d)` : escapeRegExp(secret);
+    output = output.replace(new RegExp(pattern, 'g'), placeholder);
   }
 
   // Also catch a card number typed with separators.
@@ -93,6 +96,15 @@ export function redactStrict(text: string): string {
       '$1$2***REDACTED***',
     )
     .replace(/\b(?:\d[ -]?){13,19}\b/g, '***CARD***');
+}
+
+/**
+ * Serialize to JSON with every string value redacted. Redacting the serialized
+ * text instead can corrupt numbers and break the JSON.
+ */
+export function redactedJson(value: unknown, strict = false): string {
+  const clean = strict ? redactStrict : redact;
+  return JSON.stringify(value, (_key, v: unknown) => (typeof v === 'string' ? clean(v) : v), 2);
 }
 
 /** Console logger that redacts secrets before anything reaches the Jenkins log. */

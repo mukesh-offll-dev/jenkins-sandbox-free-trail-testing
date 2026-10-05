@@ -15,7 +15,7 @@ import * as path from 'path';
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
 import { urls, qaBypassCookie, qaBypassTargets, assertSandboxOnly } from '../src/utils/env';
-import { redact } from '../src/utils/mask';
+import { redact, redactedJson } from '../src/utils/mask';
 import { buildRegistrationTestData } from '../src/utils/testData';
 
 const BYPASS_NAME = qaBypassCookie()?.name;
@@ -184,7 +184,7 @@ async function main() {
   result.screenshot = shot;
 
   const jsonPath = path.join(outDir, `email-step-${data.runId}.json`);
-  fs.writeFileSync(jsonPath, redact(JSON.stringify(result, null, 2)), 'utf8');
+  fs.writeFileSync(jsonPath, redactedJson(result), 'utf8');
 
   console.log(redact(JSON.stringify({
     outcome: result.outcome,

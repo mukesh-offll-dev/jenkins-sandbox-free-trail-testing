@@ -12,7 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { collectExecutionReport } from '../src/utils/executionReport';
 import { renderEmail, sendReportEmail } from '../src/utils/emailReporter';
-import { redactStrict } from '../src/utils/mask';
+import { redactedJson, redactStrict } from '../src/utils/mask';
 
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
@@ -36,7 +36,7 @@ async function main(): Promise<void> {
   if (email.attachments.length) log(`failure screenshots embedded: ${email.attachments.length}`);
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  fs.writeFileSync(path.join(OUT_DIR, 'execution-report.json'), redactStrict(JSON.stringify(report, null, 2)), 'utf8');
+  fs.writeFileSync(path.join(OUT_DIR, 'execution-report.json'), redactedJson(report, true), 'utf8');
   fs.writeFileSync(path.join(OUT_DIR, 'email.html'), email.html, 'utf8');
   log(`report written to ${OUT_DIR}`);
 
